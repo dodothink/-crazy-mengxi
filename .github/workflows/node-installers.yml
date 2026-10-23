@@ -1,0 +1,67 @@
+name: Attach official Node 24 installers
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/node-installers.yml']
+permissions:
+  contents: write
+concurrency:
+  group: node-installers
+  cancel-in-progress: false
+jobs:
+  installers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and verify official installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir installers
+          cd installers
+          base=https://nodejs.org/dist/v24.22.1
+          for file in node-v24.22.1-x64.msi node-v24.22.1-arm64.msi node-v24.22.1.pkg; do
+            curl --fail --location --retry 3 "$base/$file" --output "$file"
+          done
+          cat > NODE-SHA256SUMS <<'HASHES'
+          3bda4baf1ee709b33cf920dd633106ddb23951e322bff9c03ec9f64ab8981b01  node-v24.22.1-x64.msi
+          5faf40b7cba01eba47dfff7b5322979f27d0e8f042bab96cc567a3df01ec9796  node-v24.22.1-arm64.msi
+          ca7618402754944626787fca386c406a041541f097da172e92348d8b1e44e48b  node-v24.22.1.pkg
+          HASHES
+          sha256sum --check NODE-SHA256SUMS
+          cat > NODE-INSTALL.md <<'GUIDE'
+          # Node.js 安装说明
+          
+          这些是 Node.js 官方 v24.22.1 LTS 安装包，原样分发，未修改。
+          来源：https://nodejs.org/dist/v24.22.1/
+          官方校验表：https://nodejs.org/dist/v24.22.1/SHASUMS256.txt
+          发布流程已核对每个安装包的 SHA-256。
+          
+          - 普通 Windows 电脑（Intel / AMD）：下载 node-v24.22.1-x64.msi。
+          - Windows ARM 电脑：下载 node-v24.22.1-arm64.msi。不确定时在系统“关于”里看系统类型。
+          - Mac：下载 node-v24.22.1.pkg。
+          
+          只下载适合自己电脑的一份，双击，按安装程序提示完成。
+          安装完成后，重新打开“疯狂的梦溪”文件夹里的 Agent 启动文件：
+          Windows：agent/启动本地服务.cmd。
+          Mac：agent/启动本地服务.command。
+          保持运行窗口打开，然后按 INSTALL.md 完成插件加载、配对与 Kimi / Telegram 配置。
+          
+          “梦溪笔记”纯采集版不需要 Node.js。
+          Node.js 由 Node.js 项目提供，版权和许可见官方安装包。
+          GUIDE
+      - name: Attach to existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view v4.2.5-agent.3 --json assets --jq '.assets[].name' > existing.txt
+          for file in installers/*; do
+            if grep -Fxq "$(basename "$file")" existing.txt; then
+              echo "Already present: $(basename "$file")"
+            else
+              gh release upload v4.2.5-agent.3 "$file"
+            fi
+          done
