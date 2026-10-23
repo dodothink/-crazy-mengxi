@@ -1,0 +1,13 @@
+{
+  "name": "my0511-local-agent",
+  "version": "4.2.5-agent.3",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  }
+}

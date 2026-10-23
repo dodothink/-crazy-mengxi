@@ -1,0 +1,2 @@
+// Isolated page avoids collisions with core controls, CSS and element IDs.
+(()=>{const host=document.getElementById('addons');if(!host)return;const heading=document.createElement('h2');heading.textContent='疯狂的梦溪 · AI 与手机';const frame=document.createElement('iframe');frame.src=chrome.runtime.getURL('addons/workbench.html');frame.title='疯狂的梦溪工作台';frame.style.cssText='width:100%;height:1500px;border:0;border-radius:20px;background:#f0f3fa';host.append(heading,frame);})();

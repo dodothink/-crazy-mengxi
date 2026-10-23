@@ -1,0 +1,15 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,symlinkSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';import {archiveLibrary,parseArchive} from '../archives.mjs';
+const fixture=(id=1,title='存档测试',n=20)=>`---\n标题: ${JSON.stringify(title)}\n网址: https://bbs.my0511.com/f152b-t${id}z\ntid: ${id}\n---\n# ${title}\n`+Array.from({length:n},(_,i)=>`### ${i+1}楼 · 作者 · 日期 <a id="f${i+1}"></a>\n\n${'正文内容 '.repeat(1000)}\n`).join('');
+test('local archive metadata, query and bounded first/recent AI context preserve originals',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'my0511-archives-'));try{const original=fixture();writeFileSync(join(root,'thread.md'),original);writeFileSync(join(root,'index.md'),'# 存档索引');const lib=archiveLibrary(root);const list=await lib.list();assert.equal(list.total,1);assert.equal(list.skipped,1);const item=list.items[0];assert.equal(item.fid,'152');assert.equal((await lib.list({query:'不匹配'})).matched,0);assert.equal((await lib.list({query:'存档'})).matched,1);
+ const preview=await lib.preview(item.id);assert.equal(preview.truncated,true);assert.equal(preview.text.length,60000);const raw=await lib.context(item.id),context=JSON.parse(raw);assert.ok(raw.length<=24000);assert.deepEqual(context.floors.map(f=>f.floor),[1,2,3,9,10,11,12,13,14,15,16,17,18,19,20]);assert.equal(readFileSync(join(root,'thread.md'),'utf8'),original);
+ writeFileSync(join(root,'second.md'),fixture(2,'新存档',1));assert.equal((await lib.list({refresh:true})).total,2);
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+test('archive IDs reject traversal, symlinks, changed files and mismatched forum identity',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'my0511-archives-'));try{const dir=join(root,'files');mkdirSync(dir);writeFileSync(join(root,'outside.md'),fixture());symlinkSync(join(root,'outside.md'),join(dir,'linked.md'));writeFileSync(join(dir,'good.md'),fixture());const lib=archiveLibrary(dir);const r=await lib.list();assert.equal(r.total,1);assert.equal(r.skipped,1);await assert.rejects(lib.preview('../outside.md'),/不存在/);writeFileSync(join(dir,'good.md'),'not a thread');await assert.rejects(lib.preview(r.items[0].id),/有效/);assert.equal(parseArchive(fixture().replace('tid: 1','tid: 2')),null);assert.equal(parseArchive(fixture().replace('bbs.my0511.com','evil.example')),null);
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+test('archive list paginates without dropping records',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'my0511-archives-'));try{for(let i=1;i<=103;i++)writeFileSync(join(root,i+'.md'),fixture(i,'分页 '+i,1));const lib=archiveLibrary(root),first=await lib.list(),next=await lib.list({offset:100});assert.equal(first.items.length,100);assert.equal(next.items.length,3);assert.equal(next.hasMore,false);assert.equal(new Set([...first.items,...next.items].map(x=>x.id)).size,103);}finally{rmSync(root,{recursive:true,force:true});}
+});

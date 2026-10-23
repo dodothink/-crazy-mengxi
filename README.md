@@ -1,2 +1,29 @@
-# -crazy-mengxi
-    疯狂的梦溪：帖子跟踪、AI 回复草稿与 Telegram 审核助手
+# 疯狂的梦溪 4.2.5-agent.3
+
+这是独立 Agent 插件，不覆盖红色纯采集插件。
+
+## 构建与安装
+
+安装 Node.js 24 或以上；没有 npm 依赖。在仓库根目录执行 node scripts/build.mjs，生成 dist/CrazyMengxi-4.2.5-agent.3。Chrome 开启开发者模式，加载生成目录里的 extension；不要直接加载源码 extension。
+
+## 启动与配对
+
+Mac：双击生成包 agent/启动本地服务.command。若双击受限，在终端进入 agent 目录执行 node server.mjs。Windows：双击 agent/启动本地服务.cmd。运行窗口需保持打开，可以最小化。
+
+打开 agent/runtime/pairing-code，复制配对码到插件 AI 工作台，点击连接。配对码15分钟有效。然后在界面填写自己的 Kimi API Key 和 Telegram Bot Token，按提示完成私人机器人绑定。默认只读取用户下载目录下的 My0511存档。
+
+停止：运行窗口按 Ctrl+C。重启：停止后再启动；Mac 也可双击重启本地服务.command。Windows 启动脚本尚未在真机验证。
+
+## 跟踪回复
+
+填写目标帖链接、本人用户名和回复要求，开启跟踪并恢复采集。首次建立基线，之后每15分钟检查，有新楼层才调用Kimi。独立自动发表开关默认关闭；开启后，新跟踪草稿自动推送Telegram，送达满5分钟未审核才尝试发表。暂停、修改、拒绝或验证阻塞会停止发表。
+
+## 升级与数据
+
+升级保留自己的 agent/runtime，其中包含凭据、配对与数据库，绝不能分享或提交GitHub。重新加载Chrome扩展后，更新Agent需停止再启动。不要同时运行两个Agent实例。AI费用由各自Kimi账户承担。
+
+完整说明：[使用说明](使用说明.md)。此包不含开发者的密钥、队列、个人存档或Node运行程序。
+
+## 验证
+
+93项测试已通过。
