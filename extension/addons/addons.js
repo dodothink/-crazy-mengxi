@@ -14,6 +14,9 @@ const AddonControl={
  async pause(scope,paused){return paused?My0511API.pause(scope):My0511API.resume(scope);},
  async handle(m){
   switch(m.type){
+   case 'ADDON_TRACK_REMOVE':return ThreadTracker.remove(m.tid);
+   case 'ADDON_TRACK_PAUSE_ALL':return ThreadTracker.pauseAll();
+   case 'ADDON_TRACK_CONFIG':return ThreadTracker.configure(m);
    case 'ADDON_TRACK_LIST':return ThreadTracker.list();
    case 'ADDON_TRACK_SAVE':return ThreadTracker.save(m);
    case 'ADDON_TRACK_TOGGLE':return ThreadTracker.toggle(m.tid,m.enabled);

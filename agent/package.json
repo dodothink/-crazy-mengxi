@@ -1,6 +1,6 @@
 {
   "name": "my0511-local-agent",
-  "version": "4.2.5-agent.3",
+  "version": "4.2.5-agent.6",
   "private": true,
   "type": "module",
   "engines": {

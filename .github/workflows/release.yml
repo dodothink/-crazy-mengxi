@@ -28,10 +28,10 @@ jobs:
           set -euo pipefail
           cp 发布安装说明.md dist/INSTALL.md
           cd dist
-          sha256sum CrazyMengxi-4.2.5-agent.3.zip INSTALL.md > SHA256SUMS
-          printf '%s\n' '下载 CrazyMengxi-4.2.5-agent.3.zip，解压后在 Chrome 加载其中的 extension 文件夹。安装 Node.js 24 或以上，再按安装说明启动 agent 并填写自己的 Kimi / Telegram 配置。自动发表默认关闭，开启后 Telegram 送达满5分钟未审核才尝试发表。Windows真机尚未验证。' > release-notes.md
-          if gh release view 'v4.2.5-agent.3' >/dev/null 2>&1; then
+          sha256sum CrazyMengxi-4.2.5-agent.6.zip INSTALL.md > SHA256SUMS
+          printf '%s\n' '下载 CrazyMengxi-4.2.5-agent.6.zip，解压后在 Chrome 加载其中的 extension 文件夹。安装 Node.js 24 或以上，再按安装说明启动 agent 并填写自己的 Kimi / Telegram 配置。自动发表默认关闭，开启后 Telegram 送达满5分钟未审核才尝试发表。新增指定用户回复、原文引用、任务管理和新建任务反馈修复。104项测试通过。Node安装包可从agent.3发布页下载。Windows真机尚未验证。' > release-notes.md
+          if gh release view 'v4.2.5-agent.6' >/dev/null 2>&1; then
             echo 'Release already exists; preserving its assets.'
             exit 0
           fi
-          gh release create 'v4.2.5-agent.3' 'CrazyMengxi-4.2.5-agent.3.zip' INSTALL.md SHA256SUMS --target "$GITHUB_SHA" --title '疯狂的梦溪 v4.2.5-agent.3' --notes-file release-notes.md
+          gh release create 'v4.2.5-agent.6' 'CrazyMengxi-4.2.5-agent.6.zip' INSTALL.md SHA256SUMS --target "$GITHUB_SHA" --title '疯狂的梦溪 v4.2.5-agent.6' --notes-file release-notes.md

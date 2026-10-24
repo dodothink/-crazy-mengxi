@@ -3,7 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,writeFileSync,mkdirSync,readdirSync,lstatSync,cpSync,rmSync,renameSync,existsSync} from 'node:fs';
 import {resolve,join,relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
-const root=resolve(fileURLToPath(new URL('..',import.meta.url))),version='4.2.5-agent.3',productName='疯狂的梦溪',packageName='CrazyMengxi-'+version;
+const root=resolve(fileURLToPath(new URL('..',import.meta.url))),version='4.2.5-agent.6',productName='疯狂的梦溪',packageName='CrazyMengxi-'+version;
 const git=(...args)=>execFileSync('git',args,{cwd:root,maxBuffer:30*1024*1024});
 const lock=JSON.parse(readFileSync(join(root,'upstream-lock.json'),'utf8'));
 const sha=data=>createHash('sha256').update(data).digest('hex');

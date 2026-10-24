@@ -24,6 +24,7 @@ const AutoReply=(()=>{
   const t=await AddonState.read('autoReplyTask',null),p=(await AddonState.read('pendingApprovals',{}))[String(it.tid)];
   if(!(await config()).enabled||t?.state!=='sending'||t.draftRef!==it.ref||t.message!==it.message||t.tid!==it.tid||t.fid!==it.fid||p?.draftRef!==t.draftRef||Date.now()>t.dueAt+120000)throw Object.assign(new Error('自动发表已取消、草稿已改变或超时'),{paused:true});
   await AddonState.assertRunnable('post');
+  if(typeof ThreadTracker!=='undefined')await ThreadTracker.assertQuote(it.tid,it.message);
  }
  const tick=()=>AddonState.serial('auto-reply-tick',async()=>{
   let t=await AddonState.read('autoReplyTask',null);
