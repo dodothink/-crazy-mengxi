@@ -50,6 +50,7 @@ export function archiveLibrary(directory){
 // File-format readers used by reports; no fingerprint recomputation.
 export function forumTime(value){const m=/(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(value||'');return m?Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-8,+m[5],+(m[6]||0)):null;}
 export function floorDetails(f){
+ if(f.archiveData)return {...f,author:f.author||'未知作者',at:forumTime(f.time),current:f.text,history:f.history||[],hidden:!!f.hidden,fingerprints:f.fingerprint?[f.fingerprint]:[],quote:f.text};
  const parts=f.heading.split(' · '),timeIndex=parts.findIndex(x=>forumTime(x)!==null);
  const cut=f.text.indexOf('> **本楼内容变过');const current=cut>=0?f.text.slice(0,cut).trim():f.text;
  const history=[...f.text.matchAll(/<details><summary>(.*?)<\/summary>\s*\n([\s\S]*?)<\/details>/g)].map(m=>({label:m[1],raw:m[2].trim()}));

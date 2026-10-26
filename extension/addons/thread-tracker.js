@@ -4,8 +4,8 @@ const ThreadTracker=(()=>{
 
  function options(m){const mode=m.replyMode||'all';if(!['all','selected'].includes(mode))throw Error('回复对象无效');const users=[...new Set(String(m.replyUsers||'').split(/[\n,，;；]+/).map(x=>x.trim()).filter(Boolean))];if(users.length>20||users.some(x=>x.length>100))throw Error('最多20个用户名，每个不超过100字');if(mode==='selected'&&!users.length)throw Error('请填写至少一个指定用户名');return {replyMode:mode,replyUsers:users,quoteOriginal:!!m.quoteOriginal};}
  function eligible(t,f){const author=String(f.author||'').trim();return author!==t.myName&&(t.replyMode!=='selected'||(t.replyUsers||[]).includes(author));}
- async function configure(m){const config=options(m),tid=String(m.tid);if(!(await read())[tid])throw Error('跟踪帖不存在');await Bridge.invalidateApproval(tid);await update(tid,t=>({...t,...config,revision:AddonState.id(),draft:null,notice:null,autoApprovalId:null,lastError:null,note:'回复规则已更新，旧草稿与倒计时已取消'}));await Bridge.invalidateApproval(tid);return list();}
- function quotedDraft(t,result,batch){const source=batch.find(f=>f.floor===result.floor);let message=result.message;let quote=null;if(t.quoteOriginal){const text=String(source.text||'').trim();if(!text)throw Error('目标楼层无可引用正文');quote={floor:source.floor,author:String(source.author||'').trim(),text};const safe=x=>x.replace(/\[/g,'［').replace(/\]/g,'］');const excerpt=safe(text.slice(0,240));message='引用 '+quote.author+' 的 '+quote.floor+' 楼原文'+(text.length>240?'（节选）':'')+'\n'+excerpt+'\n原帖 '+t.url+'\n\n'+message;if(message.length>3000)throw Error('引用和回复合计超过3000字，请缩短回复要求');}return {message,quote,author:String(source.author||'').trim(),floor:result.floor,reason:result.reason.slice(0,500),id:AddonState.id()};}
+ async function configure(m){const config=options(m),tid=String(m.tid);if(m.prompt!==undefined){if(typeof m.prompt!=='string'||m.prompt.length>300)throw Error('回复要求最多300字');config.prompt=m.prompt;}if(!(await read())[tid])throw Error('跟踪帖不存在');await Bridge.invalidateApproval(tid);await update(tid,t=>({...t,...config,revision:AddonState.id(),draft:null,notice:null,autoApprovalId:null,lastError:null,note:'回复规则已更新，旧草稿与倒计时已取消'}));await Bridge.invalidateApproval(tid);return list();}
+ function quotedDraft(t,result,batch){const source=batch.find(f=>f.floor===result.floor);let message=result.message;let quote=null;if(t.quoteOriginal){const text=String(source.text||'').trim();if(!text)throw Error('目标楼层无可引用正文');quote={floor:source.floor,author:String(source.author||'').trim(),text};const safe=x=>x.replace(/\[/g,'［').replace(/\]/g,'］');const excerpt=safe(text.slice(0,240));message='引用 '+quote.author+' 的 '+quote.floor+' 楼原文'+(text.length>240?'（节选）':'')+'\n'+excerpt+'\n原帖 '+t.url+'\n\n'+message;if(message.length>3000)throw Error('引用和回复合计超过3000字，请缩短回复要求');}return {message,quote,sourceText:String(source.text||'').slice(0,500),author:String(source.author||'').trim(),floor:result.floor,reason:result.reason.slice(0,500),id:AddonState.id()};}
  async function assertQuote(tid,message){const t=(await read())[tid];if(!t?.draft?.quote||t.draft.message!==message)return;const q=t.draft.quote,r=await My0511API.getThread(tid);const f=Object.values(r?.floors||{}).find(f=>f.floor===q.floor);if(!f||f.hiddenAt||String(f.author||'').trim()!==q.author||String(f.text||'').trim()!==q.text)throw Error('被引用楼层已变化或不可见，请重新核对草稿');}
 
  const analyzing=new Set();
@@ -31,7 +31,12 @@ const ThreadTracker=(()=>{
  async function toggle(tid,enabled){await update(tid,t=>({...t,enabled:!!enabled,revision:AddonState.id(),notice:enabled?t.notice:null,nextAt:0,note:enabled?'等待检查':'跟踪已暂停'}));if(!enabled)await Bridge.invalidateApproval(tid);else await tick();return list();}
  async function remove(tid){tid=String(tid);await update(tid,t=>({...t,enabled:false,revision:AddonState.id(),notice:null,note:'正在移除任务'}));await Bridge.invalidateApproval(tid);await AddonState.update('trackedThreads',v=>{delete v[tid];return v;},{});return list();}
  async function pauseAll(){const ids=Object.keys(await read());await AddonState.update('trackedThreads',v=>{for(const tid of ids)if(v[tid])v[tid]={...v[tid],enabled:false,revision:AddonState.id(),notice:null,nextAt:0,note:'跟踪已暂停'};return v;},{});const results=await Promise.allSettled(ids.map(tid=>Bridge.invalidateApproval(tid)));if(results.some(r=>r.status==='rejected'))throw Error('任务已暂停，但部分审核取消未确认，请刷新并核对自动发表状态');return list();}
- async function tick(){return AddonState.serial('tracker-queue',async()=>{const status=await My0511API.status();if(status.haltCollect||status.challenge)return;for(const t of Object.values(await read())){if(!t.enabled)continue;const completed=await AutoReply.status();if(t.autoApprovalId&&completed.task?.approvalId===t.autoApprovalId&&completed.task.state==='done'){await update(t.tid,x=>({...x,draft:null,autoApprovalId:null,lastPostedAt:Date.now(),note:'已确认发表成功，继续跟踪新回复'}));}if(t.notice){
+ async function blockManual(tid){await update(tid,t=>t.draft?.attemptRef?{...t,draft:{...t.draft,manualCancelled:true}}:t);}
+ async function hold(tid,id){await update(tid,t=>{if(t.draft?.id!==id)throw Error('草稿已变化');return {...t,notice:null,reviewHold:true,autoApprovalId:null,note:'手机正在审核，已取消旧倒计时'};});await Bridge.invalidateApproval(tid);}
+ async function claimManual(tid,id,message,ref){await update(tid,t=>{if(!t.enabled||t.draft?.id!==id||t.draft.message!==message||t.draft.attemptRef)throw Error('草稿已变化或已尝试发表，请核对记录');return {...t,draft:{...t.draft,attemptRef:ref},notice:null,note:'手机确认发表，正在核验'};});}
+ async function finishManual(tid,id,ref){await update(tid,t=>t.draft?.id===id&&t.draft.attemptRef===ref?{...t,draft:null,notice:null,autoApprovalId:null,lastPostedAt:Date.now(),note:'手机回复已确认发表成功'}:t);}
+ async function failManual(tid,id,ref,error){await update(tid,t=>t.draft?.id===id&&t.draft.attemptRef===ref?{...t,lastError:error,note:'发表未确认，不会自动重试，请核对论坛记录'}:t);}
+ async function tick(){return AddonState.serial('tracker-queue',async()=>{const status=await My0511API.status();if(status.haltCollect||status.challenge)return;for(const t of Object.values(await read())){if(!t.enabled)continue;const completed=await AutoReply.status();if(t.autoApprovalId&&completed.task?.approvalId===t.autoApprovalId&&completed.task.state==='done'){await update(t.tid,x=>({...x,draft:null,autoApprovalId:null,lastPostedAt:Date.now(),note:'已确认发表成功，继续跟踪新回复'}));}if(t.notice&&!t.reviewHold){
  if(t.notice.automatic){
   const auto=await AutoReply.status();
   if(!auto.enabled){await update(t.tid,x=>({...x,notice:{...x.notice,automatic:false},note:'自动发表已关闭，保留草稿'}));continue;}
@@ -39,10 +44,10 @@ const ThreadTracker=(()=>{
   if(auto.task&&['waiting_notice','countdown','claiming','sending'].includes(auto.task.state)){await update(t.tid,x=>({...x,note:'等待上一条自动审核结束'}));continue;}
   // Persist before sending: interrupted requests must not be replayed.
   await update(t.tid,x=>({...x,notice:null,note:'正在发送手机审核；中断后请人工核对'}));
-  try{const current=(await read())[t.tid];if(!current?.enabled||current.revision!==t.revision||current.draft?.id!==t.draft?.id)continue;
+  try{const current=(await read())[t.tid];if(!current?.enabled||current.reviewHold||current.revision!==t.revision||current.draft?.id!==t.draft?.id)continue;
    await assertQuote(t.tid,t.draft.message);
    const response=await Bridge.approval({tid:t.tid,fid:t.fid,message:t.draft.message});
-   const after=(await read())[t.tid];if(!after?.enabled||after.revision!==t.revision||after.draft?.id!==t.draft.id){await Bridge.invalidateApproval(t.tid);continue;}
+   const after=(await read())[t.tid];if(!after?.enabled||after.reviewHold||after.revision!==t.revision||after.draft?.id!==t.draft.id){await Bridge.invalidateApproval(t.tid);continue;}
    await update(t.tid,x=>({...x,autoApprovalId:response.id,note:response.automatic?'手机审核已排队，送达后开始5分钟倒计时':'手机审核已排队，自动发表开关已关闭'}));
   }catch(e){await update(t.tid,x=>({...x,lastError:e.message,note:'送审未确认，请人工核对；不会自动重送'}));}
  }else{try{await Bridge.request('/track-notify',{id:t.notice.id,tid:t.tid,text:t.notice.text});await update(t.tid,x=>({...x,notice:null}));}catch{}}
@@ -58,8 +63,9 @@ const ThreadTracker=(()=>{
    await update(tid,x=>({...x,title,lastAt:Date.now(),newCount:fresh.length}));
    if(t.draft){await update(tid,x=>({...x,note:'已有待审核草稿，新回复稍后处理'}));return;}
    if(!fresh.length){await update(tid,x=>({...x,seen:ids,note:'没有符合回复对象的新楼层，不调用 Kimi'}));return;}
-   const batch=fresh.slice(0,8),selected=new Set(batch.map(f=>f.floor));
-   const context=JSON.stringify({title,myName:t.myName,instructions:t.prompt,context:floors.filter(f=>!selected.has(f.floor)).slice(-3).map(f=>({floor:f.floor,author:f.author,text:String(f.text||'').slice(0,900)})),newReplies:batch.map(f=>({floor:f.floor,author:f.author,text:String(f.text||'').slice(0,1600)}))});
+   const cfg=(await Bridge.request('/ai-config',{})).config||{};let batch=fresh.slice(0,Math.min(20,Math.max(1,cfg.batchSize||8)));let selected=new Set(batch.map(f=>f.floor));
+   const makeContext=()=>JSON.stringify({title,myName:t.myName,instructions:t.prompt,myStatements:floors.filter(f=>String(f.author||'').trim()===t.myName).slice(-4).map(f=>({floor:f.floor,text:String(f.text||'').slice(0,600)})),context:floors.filter(f=>!selected.has(f.floor)).slice(-3).map(f=>({floor:f.floor,author:f.author,text:String(f.text||'').slice(0,900)})),newReplies:batch.map(f=>({floor:f.floor,author:f.author,text:String(f.text||'').slice(0,1600)}))});
+   let context=makeContext();while(context.length>24000&&batch.length>1){batch.pop();selected=new Set(batch.map(f=>f.floor));context=makeContext();}
    analyzing.add(tid);await update(tid,x=>({...x,aiStartedAt:Date.now()}));
    const answer=await Bridge.request('/track-ai',{context});
    const result=JSON.parse(answer.text.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));
@@ -67,15 +73,15 @@ const ThreadTracker=(()=>{
    const current=(await read())[tid],latest=await My0511API.status();if(!current?.enabled||current.revision!==t.revision||latest.haltCollect||latest.challenge)return;
    const autoConfig=await AutoReply.status();
    const draft=result.shouldReply?quotedDraft(t,result,batch):null;
-   await update(tid,x=>!x.enabled||x.revision!==t.revision?x:({...x,seen:[...new Set([...x.seen,...batch.map(f=>f.floor),...floors.filter(f=>!eligible(t,f)).map(f=>f.floor)])],draft,note:draft?'草稿已生成，等待审核':'本轮无需回复：'+result.reason.slice(0,300),notice:draft?{id:draft.id,automatic:autoConfig.enabled,text:'帖子跟踪 · 待审核草稿\n'+title+' · 回应'+draft.floor+'楼\n理由：'+draft.reason+'\n草稿：'+draft.message.slice(0,1600)+'\n'+t.url+'\n请在工作台审核，尚未发表。'}:null}));await tick();
+   await update(tid,x=>!x.enabled||x.revision!==t.revision?x:({...x,seen:[...new Set([...x.seen,...batch.map(f=>f.floor),...floors.filter(f=>!eligible(t,f)).map(f=>f.floor)])],draft,reviewHold:false,note:draft?'草稿已生成，等待审核':'本轮无需回复：'+result.reason.slice(0,300),notice:draft?{id:draft.id,automatic:autoConfig.enabled,text:'帖子跟踪 · 待审核草稿\n'+title+' · 回应'+draft.floor+'楼\n理由：'+draft.reason+'\n草稿：'+draft.message.slice(0,1600)+'\n'+t.url+'\n请在工作台审核，尚未发表。'}:null}));await tick();
   }catch(e){await update(tid,x=>({...x,lastError:e.message,note:'本轮未完成：'+e.message}));}finally{analyzing.delete(tid);}
  });}
  async function action(m){if(!['dismiss','approval','fill','save'].includes(m.action))throw Error('未知操作');const t=(await read())[m.tid];if(!t?.draft||t.draft.id!==m.id)throw Error('草稿已变化，请刷新');
  if(m.action==='dismiss'){await Bridge.invalidateApproval(t.tid);await update(t.tid,x=>({...x,draft:null,notice:null,note:'草稿已处理，等待下一轮'}));}
- else {if(!t.enabled)throw Error('请先开启该帖跟踪');const message=String(m.message||'').trim();if(!message||message.length>3000)throw Error('草稿为空或超过3000字');await Bridge.invalidateApproval(t.tid);await update(t.tid,x=>({...x,notice:null,draft:{...x.draft,message}}));await assertQuote(t.tid,message);if(m.action==='approval')await Bridge.approval({tid:t.tid,fid:t.fid,message});else if(m.action==='fill')await My0511API.fillReply({tid:t.tid,fid:t.fid,message});else if(m.action!=='save')throw Error('未知操作');}
+ else {if(!t.enabled&&m.action!=='save')throw Error('请先开启该帖跟踪');const message=String(m.message||'').trim();if(!message||message.length>3000)throw Error('草稿为空或超过3000字');await Bridge.invalidateApproval(t.tid);await update(t.tid,x=>({...x,notice:null,draft:{...x.draft,message}}));await assertQuote(t.tid,message);if(m.action==='approval')await Bridge.approval({tid:t.tid,fid:t.fid,message});else if(m.action==='fill')await My0511API.fillReply({tid:t.tid,fid:t.fid,message});else if(m.action!=='save')throw Error('未知操作');}
  return list();}
  chrome.alarms.get('thread-tracker').then(a=>{if(!a)chrome.alarms.create('thread-tracker',{periodInMinutes:1});});
  chrome.alarms.onAlarm.addListener(a=>{if(a.name==='thread-tracker')tick().catch(()=>{});});
  My0511API.on('jobDone',e=>{if(e.skipped)update(e.tid,t=>({...t,lastError:String(e.skipped),note:'采集未完成：'+String(e.skipped)}));else process(String(e.tid)).catch(()=>{});});
- return {list,save,toggle,tick,process,action,configure,assertQuote,remove,pauseAll};
+ return {list,save,toggle,tick,process,action,configure,assertQuote,remove,pauseAll,hold,claimManual,finishManual,failManual,blockManual};
 })();

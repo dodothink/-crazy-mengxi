@@ -3,7 +3,7 @@ const AutoReply=(()=>{
  const active=t=>t&&['waiting_notice','countdown','claiming','sending'].includes(t.state);
  const config=async()=>({enabled:false,...await AddonState.read('autoReplyConfig',{})});
  async function cancel(reason='已取消自动发表',tid,ref){
-  await AddonState.update('autoReplyTask',t=>active(t)&&(!tid||t.tid===String(tid))&&(!ref||t.draftRef===ref)?{...t,state:'cancelled',reason}:t,null);
+  await AddonState.update('autoReplyTask',t=>active(t)&&(!tid||t.tid===String(tid))&&(!ref||t.draftRef===ref)?{...t,state:'cancelled',reason,...(t.state==='sending'?{submissionStartedAt:t.submissionStartedAt||Date.now()}:{})}:t,null);
  }
  async function setEnabled(enabled){
   if(typeof enabled!=='boolean')throw new Error('开关值无效');
@@ -49,7 +49,7 @@ const AutoReply=(()=>{
    const claim=await Bridge.autoApproval({id:t.approvalId,draftRef:ref,action:'claim'});
    if(claim.busy){await AddonState.update('autoReplyTask',v=>v?.draftRef===ref&&v.state==='claiming'?{...v,state:'countdown'}:v,null);return;}
    if(claim.state!=='timed_out')throw new Error('未确认自动发表授权，本次已取消');
-   t=await AddonState.update('autoReplyTask',v=>v?.draftRef===ref&&v.state==='claiming'?{...v,state:'sending'}:v,null);
+   t=await AddonState.update('autoReplyTask',v=>v?.draftRef===ref&&v.state==='claiming'?{...v,state:'sending',submissionStartedAt:Date.now()}:v,null);
    if(t?.draftRef!==ref||t.state!=='sending')return;
    const result=await My0511API.postOnce({ref:t.draftRef,tid:t.tid,fid:t.fid,message:t.message},item=>assertReady({...item,ref:t.draftRef}));
    await AddonState.update('autoReplyTask',v=>v?.draftRef===ref&&v.state==='sending'?{...v,state:result?.ok?'done':'stopped',reason:result?.error||'任务未发送，请查看发帖记录'}:v,null);

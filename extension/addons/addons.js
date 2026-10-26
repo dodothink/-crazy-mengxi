@@ -8,9 +8,9 @@ const AddonState=(()=>{
   async assertRunnable(){const s=await My0511API.status();if(s.haltPost||s.challenge)throw Error('发帖已暂停或等待人工验证');},
   event:(type,detail)=>My0511API.store.update('events',v=>[...v,{at:Date.now(),type,...detail}].slice(-200),[])};
 })();
-importScripts('addons/bridge.js','addons/auto-reply.js','addons/thread-tracker.js');
+importScripts('addons/bridge.js','addons/auto-reply.js','addons/thread-tracker.js','addons/remote-control.js');
 const AddonControl={
- async status(){const s=await My0511API.status();return {...s,ok:true,posts:[],alertGap:await AddonState.read('alertGap',null),archiveStatus:await My0511API.archiveStatus(),agentConnectedAt:(await AddonState.read('agentConnection',null))?.lastSeenAt||null};},
+ async status(){const s=await My0511API.status();return {...s,ok:true,posts:(s.posts||[]).slice(-20),alertGap:await AddonState.read('alertGap',null),archiveStatus:await My0511API.archiveStatus(),agentConnectedAt:(await AddonState.read('agentConnection',null))?.lastSeenAt||null};},
  async pause(scope,paused){return paused?My0511API.pause(scope):My0511API.resume(scope);},
  async handle(m){
   switch(m.type){
@@ -27,6 +27,7 @@ const AddonControl={
    case 'ADDON_LIST':return {ok:true,list:(await My0511API.listThreads()).map(t=>({...t,thread:t}))};
    case 'ADDON_PAIR':return Bridge.pair(m.code);
    case 'ADDON_SYNC':return Bridge.sync();
+   case 'ADDON_AI_CONFIG':return Bridge.request('/ai-config',m);
    case 'ADDON_SETTINGS':return Bridge.settings(m);
    case 'ADDON_AI':return Bridge.ai(m.tid,m.prompt);
    case 'ADDON_ARCHIVES':return Bridge.archives(m);

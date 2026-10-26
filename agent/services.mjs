@@ -32,8 +32,8 @@ export function services({store,archives,output,notify,ai,now=Date.now}){
  async function evidence(a){
   if(!evidenceReady(a))return report('evidence',a.id,'# 证据暂缺\n\n原帖：'+a.url+'\n\n'+archiveReason()+'。本次不引用可能过期的楼层内容或指纹，请在完成存档后核对。');
   const r=await archives.byTid(a.tid),sections=[];
-  for(const source of r.sources){const f=source.floors.find(x=>x.floor===a.floor);if(f)sections.push('## 来源 '+source.fileName+'\n\n### '+f.floor+'楼 · '+f.heading+'\n\n'+f.text);}
-  return report('evidence',a.id,'# 改帖证据记录\n\n提醒：'+a.kind+' · '+new Date(a.at).toISOString()+'\n原帖：'+a.url+'\n\n以下逐字引用存档中的当前版本、历史与指纹；不重新计算指纹，也不判断删楼原因。\n\n'+(sections.join('\n\n')||'当前存档没有此楼，无法提供证据。'));
+  for(const source of r.sources){const f=source.floors.find(x=>x.floor===a.floor);if(f)sections.push('## 来源 '+source.fileName+'\n\n### '+f.floor+'楼 · '+f.heading+'\n\n'+(f.archiveData?JSON.stringify({text:f.text,quote:f.quote,hidden:f.hidden,fingerprint:f.fingerprint,history:f.history},null,2):f.text));}
+  return report('evidence',a.id,'# 改帖证据记录\n\n提醒：'+a.kind+' · '+new Date(a.at).toISOString()+'\n原帖：'+a.url+'\n\n以下按存档原字段展示当前版本、历史与指纹；不重新计算指纹，也不判断删楼原因。\n\n'+(sections.join('\n\n')||'当前存档没有此楼，无法提供证据。'));
  }
  async function pushAlerts(){
   const time=now(),c=cfg();if(quiet(c,time)||!store.get('telegramBinding'))return;
@@ -80,7 +80,7 @@ export function services({store,archives,output,notify,ai,now=Date.now}){
   notify('daily:'+bj(time).day,`观察名单日报 ${bj(time).day}\n${users.length} 个关注 ID，在本机存档中共 ${total} 楼。完整记录见附件。`,{document:result.path});return {...result,total};
  }
  async function summary(tid){
-  const r=await archives.byTid(tid);let chunks=[],part='';for(const f of r.floors){const text=floorDetails(f).current;for(let i=0;i<text.length;i+=11000){const bit=`\n【${f.floor}楼 ${f.heading.slice(0,300)}${i?'（续）':''}】\n`+text.slice(i,i+11000);if(part.length+bit.length>12000){if(part)chunks.push(part);part='';}part+=bit;}}if(part)chunks.push(part);if(!chunks.length)throw Error('存档没有可摘要的正文');
+  const r=await archives.byTid(tid);if(r.warning)throw Error(r.warning+'；请先由上游完成完整采集，再生成摘要');let chunks=[],part='';for(const f of r.floors){const text=floorDetails(f).current;for(let i=0;i<text.length;i+=11000){const bit=`\n【${f.floor}楼 ${f.heading.slice(0,300)}${i?'（续）':''}】\n`+text.slice(i,i+11000);if(part.length+bit.length>12000){if(part)chunks.push(part);part='';}part+=bit;}}if(part)chunks.push(part);if(!chunks.length)throw Error('存档没有可摘要的正文');
   let notes=[];for(let i=0;i<chunks.length;i++){const key='summaryChunk:'+digest(r.tid+chunks[i]);let note=store.get(key);if(!note){try{note=await ai(chunks[i],'概括本段主要观点、各方立场和关键楼层，保留楼号，不编造未出现的观点。');store.set(key,note);}catch(e){const partial=report('summary-partial',tid,`# 长帖摘要未完成\n\n已完成 ${notes.length}/${chunks.length} 段。${e.message}\n下次会复用已完成段落，不重复调用。\n\n`+notes.join('\n\n'));throw Error(e.message+'；进度已保存为 '+partial.file);}}notes.push(note);}
   // Hierarchical reduction keeps every chunk represented and each request bounded.
   let final;try{let merged=notes.join('\n');while(merged.length>18000){const next=[];for(let i=0;i<merged.length;i+=18000){const input=merged.slice(i,i+18000),key='summaryReduce:'+digest(input);let note=store.get(key);if(!note){note=await ai(input,'压缩合并摘要，保留分歧和关键楼号，不增加原文之外的事实。');store.set(key,note);}next.push(note);}const reduced=next.join('\n');if(reduced.length>=merged.length)throw Error('摘要压缩未收敛，请稍后重试');merged=reduced;}

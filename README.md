@@ -1,10 +1,10 @@
-# 疯狂的梦溪 4.2.5-agent.6
+# 疯狂的梦溪 4.2.5-agent.10
 
 这是独立 Agent 插件，不覆盖红色纯采集插件。
 
 ## 构建与安装
 
-安装 Node.js 24 或以上；没有 npm 依赖。在仓库根目录执行 node scripts/build.mjs，生成 dist/CrazyMengxi-4.2.5-agent.6。Chrome 开启开发者模式，加载生成目录里的 extension；不要直接加载源码 extension。
+安装 Node.js 24 或以上；没有 npm 依赖。在仓库根目录执行 node scripts/build.mjs，生成 dist/CrazyMengxi-4.2.5-agent.10。Chrome 开启开发者模式，加载生成目录里的 extension；不要直接加载源码 extension。
 
 ## 启动与配对
 
@@ -36,6 +36,16 @@ Mac：双击生成包 agent/启动本地服务.command。若双击受限，在�
 - 新建任务表单默认展开，错误就在按钮旁显示；添加成功重置筛选，避免新任务被隐藏。相同帖子不能重复添加，请在原卡片恢复或修改规则。
 - 输入第一页链接即可逐页采到末页。首次采集只建立基线；之后的新增楼层才参与拟稿。
 
-升级：保留原插件目录及 agent/runtime，把新版 extension 内容更新到原加载目录，再在 Chrome 重新加载扩展并重新打开工作台。本次仅插件逻辑变化，已有 Agent 无需重启。
+升级：保留原插件目录及 agent/runtime，把新版 extension 内容更新到原加载目录，再在 Chrome 重新加载扩展并重新打开工作台。本次包含 Agent 更新，必须重启 Agent。
 
-首次安装请从 Releases 下载 CrazyMengxi-4.2.5-agent.6.zip，解压后加载其中的 extension。Node.js 官方安装包仍可从 [agent.3 发布页](https://github.com/dodothink/-crazy-mengxi/releases/tag/v4.2.5-agent.3) 下载。
+首次安装请从 Releases 下载 CrazyMengxi-4.2.5-agent.10.zip，解压后加载其中的 extension。Node.js 官方安装包仍可从 [agent.3 发布页](https://github.com/dodothink/-crazy-mengxi/releases/tag/v4.2.5-agent.3) 下载。
+
+## agent.10 更新
+
+- Telegram 增加状态面板、任务管理、草稿审核、运行控制及记录查询；只允许绑定的私人账号，发送与移除需确认。
+- Kimi 默认使用 kimi-k3.1-pro，low 思考强度；每日调用默认不限，批量楼层数、调用限额与输出上限可调。
+- 本机存档阅读使用上游 4.3.2 的 _data v1 清单及 JSON，校验 SHA-256，首次静默建立基线。
+- 覆盖全部不等于全帖采集完整；未知完整性可浏览，但不能作为完整回复或摘要材料。
+- 内置采集核心仍是 4.2.5。浏览器“帖子跟踪与智能回复”仍会采集，尚未迁移到纯存档读取；本版没有消除两个插件的重复采集。
+
+本次升级需要重启 Agent、重新加载疯狂的梦溪扩展并重新打开工作台。保留原 agent/runtime 和扩展目录，不要卸载重装。Windows 真机尚未验证。138 项自动测试通过。
