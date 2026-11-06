@@ -10,6 +10,7 @@ test('HTTP authentication, origin isolation, one-use pairing and AI validation',
  assert.equal((await call('/remote-guard',{id:'test-send'})).status,401);
  assert.equal((await call('/ai-config',{})).status,401);
  assert.equal((await call('/archives',{})).status,401);
+ assert.equal((await call('/archive-search',{query:'正文'})).status,401);
  assert.equal((await call('/archive-status',{})).status,401);
  assert.equal((await call('/services',{})).status,401);
  assert.equal((await call('/report',{kind:'daily'})).status,401);
@@ -19,6 +20,7 @@ test('HTTP authentication, origin isolation, one-use pairing and AI validation',
  const code=readFileSync(dir+'pairing-code','utf8');const p=await (await call('/pair',{code,profile:'test-profile-123456'})).json();assert.equal(p.ok,true);
  assert.equal((await call('/pair',{code,profile:'test-profile-123456'})).status,403);
  const headers={Authorization:'Bearer '+p.token};
+ const search=await (await call('/archive-search',{query:'正文'},headers)).json();assert.equal(search.total,1);assert.equal(search.items[0].floor,1);assert.equal((await call('/archive-search',{},headers)).status,400);
  const aiCfg=await (await call('/ai-config',{action:'save',config:{dailyLimit:0,batchSize:12,reasoningEffort:'low'}},headers)).json();assert.equal(aiCfg.config.model,'kimi-k3.1-pro');assert.equal(aiCfg.config.batchSize,12);assert.equal((await call('/ai-config',{action:'save',config:{dailyLimit:-1}},headers)).status,400);
  const service=await (await call('/services',{action:'save',config:{dailyEnabled:false,quietStart:'01:00'}},headers)).json();assert.equal(service.config.quietStart,'01:00');assert.equal(service.config.dailyEnabled,false);
  assert.equal((await call('/services',{action:'save',config:{dailyTime:'99:00'}},headers)).status,400);

@@ -27,3 +27,20 @@ input::placeholder,textarea::placeholder{color:#65718b}textarea{line-height:1.8;
 .tabs{display:flex;margin:0 0 14px;gap:4px}.tabs button{flex:1;min-width:0;padding:8px 4px;border:1px solid transparent;background:transparent;font-size:12px;color:var(--dim)}.tabs button.on{background:#ffffffed;border-color:#fff;color:#304995;font-weight:600;box-shadow:0 3px 10px #34477512}
 
 [data-kind][aria-pressed="true"],#dailyEnabled[aria-pressed="true"]{background:#334f8b;color:white;border-color:#334f8b}
+
+/* Mengxi Echo: paper surfaces, ink teal, glass only at navigation. */
+:root{--ink:#173D40;--dim:#576E6A;--line:#D5DEDA;--blue:#245B5D;--wash:#E7EFEB;--bg:#F5F4EF}
+html,body{background:#F5F4EF;color:var(--ink)}
+section,.thread{background:#FFFEFA;border:1px solid #DCE3DC;box-shadow:0 6px 24px #173d4006;backdrop-filter:none;-webkit-backdrop-filter:none}
+main>header{background:#f5f4efdf;border-bottom:1px solid #d5deda;padding-bottom:20px;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.brand-mark{object-fit:contain;background:#173D40;border:0;box-shadow:none}.brand small,.head small{color:#617D77}
+button,button.ghost,button.mini,button[data-toggle],.thread-choice{background:#fffefa;border-color:#c9d7cf;color:#173d40;box-shadow:none}
+button:hover:not(:disabled){background:#e7efeb;border-color:#88aaa1;color:#173d40}
+button.go,#generate,#saveSettings,#adopt{background:#173d40;color:#fffefa;border-color:#173d40}
+button.go:hover:not(:disabled),#generate:hover:not(:disabled),#saveSettings:hover:not(:disabled),#adopt:hover:not(:disabled){background:#245b5d;color:#fff}
+button[data-toggle][aria-pressed=true],.thread-choice[aria-pressed=true],.toggle[aria-pressed=true],[data-kind][aria-pressed=true],#dailyEnabled[aria-pressed=true]{background:#dbeae3;color:#173d40;border-color:#8eafa4}
+input,select,textarea,input[type=search]{background:#fffefa;border-color:#c9d7cf;color:#173d40}
+.status,#notice{background:#e7efeb;border-color:#c9d7cf;color:#173d40}
+a{color:#245b5d}.tabs button.on{color:#173d40}.sample,code{background:#e7efeb}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible,summary:focus-visible{outline-color:#468679}
+#controlCenter>details{padding:12px 0;border-top:1px solid #dce3dc}#controlCenter>details>summary{font-weight:600;cursor:pointer}#controlCenter>details>section{box-shadow:none;margin-top:12px}#taskSwitchList>div{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 0;border-bottom:1px solid #e5e9e2}

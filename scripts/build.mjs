@@ -3,7 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,writeFileSync,mkdirSync,readdirSync,lstatSync,cpSync,rmSync,renameSync,existsSync} from 'node:fs';
 import {resolve,join,relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
-const root=resolve(fileURLToPath(new URL('..',import.meta.url))),version='4.2.5-agent.10',productName='疯狂的梦溪',packageName='CrazyMengxi-'+version;
+const root=resolve(fileURLToPath(new URL('..',import.meta.url))),version='4.2.5-agent.14.2',productName='梦溪·回声',packageName='MengxiEcho-'+version;
 const git=(...args)=>execFileSync('git',args,{cwd:root,maxBuffer:30*1024*1024});
 const lock=JSON.parse(readFileSync(join(root,'upstream-lock.json'),'utf8'));
 const sha=data=>createHash('sha256').update(data).digest('hex');
@@ -15,16 +15,22 @@ const stage=join(root,'dist','.stage-'+Date.now()),product=join(root,'dist',pack
 for(const name of ['extension','test','test-addons','docs'])cpSync(join(root,name),join(stage,name),{recursive:true});
 mkdirSync(join(stage,'agent'));for(const f of readdirSync(join(root,'agent'))){const src=join(root,'agent',f);if(f==='test')cpSync(src,join(stage,'agent/test'),{recursive:true});else if(lstatSync(src).isFile()&&(/\.(mjs|cmd|command)$/.test(f)||['package.json','README.md'].includes(f)))cpSync(src,join(stage,'agent',f));}
 cpSync(join(root,'使用说明.md'),join(stage,'使用说明.md'));
-const original=JSON.parse(readFileSync(join(root,'extension/manifest.json')));const manifest={...original,name:productName,description:'疯狂的梦溪：独立 Agent 插件，读帖、Kimi 回复草稿、Telegram 审核和存档报告。',version:lock.version,version_name:version,key:readFileSync(join(root,'assets/extension-public-key.txt'),'utf8').trim(),action:{...original.action,default_title:productName,default_popup:'addons/launcher.html'},host_permissions:[...new Set([...original.host_permissions,'http://127.0.0.1:17851/*'])]};
+const original=JSON.parse(readFileSync(join(root,'extension/manifest.json')));const manifest={...original,name:productName,description:'梦溪·回声：独立 Agent 插件，读帖、Kimi 回复草稿、Telegram 审核和存档报告。',version:lock.version,version_name:version,key:readFileSync(join(root,'assets/extension-public-key.txt'),'utf8').trim(),action:{...original.action,default_title:productName,default_popup:'addons/launcher.html'},host_permissions:[...new Set([...original.host_permissions,'http://127.0.0.1:17851/*'])]};
 writeFileSync(join(stage,'extension/manifest.json'),JSON.stringify(manifest,null,2)+'\n');cpSync(join(root,'assets/icons'),join(stage,'extension/icons'),{recursive:true});
 for(const name of core){if(name==='extension/manifest.json'||name.startsWith('extension/icons/'))continue;if(sha(readFileSync(join(stage,name)))!==lock.sha256[name])throw Error('Packaged core drift: '+name);}
-const tests=[...files(join(stage,'test')),...files(join(stage,'test-addons')),...files(join(stage,'agent/test'))].filter(x=>x.endsWith('.test.mjs'));
+// Upstream collector tests run against its unchanged core with empty addon hooks.
+// Downstream integration tests run against the actual local-only packaged extension.
+const coreTest=join(stage,'.core-tests');mkdirSync(coreTest);cpSync(join(stage,'extension'),join(coreTest,'extension'),{recursive:true});cpSync(join(stage,'test'),join(coreTest,'test'),{recursive:true});
+writeFileSync(join(coreTest,'extension/addons/addons.js'),'// Core-only regression fixture.\n');
+const tests=[...files(join(stage,'test-addons')),...files(join(stage,'agent/test'))].filter(x=>x.endsWith('.test.mjs'));
+const coreTests=files(join(coreTest,'test')).filter(x=>x.endsWith('.test.mjs'));
 const testTmp=join(stage,'.test-tmp');mkdirSync(testTmp);
-try{execFileSync(process.execPath,['--test',...tests],{cwd:stage,stdio:'inherit',env:{...process.env,TMPDIR:testTmp,TMP:testTmp,TEMP:testTmp}});}finally{rmSync(testTmp,{recursive:true,force:true});}
+try{for(const suite of [coreTests,tests])execFileSync(process.execPath,['--test',...suite],{cwd:stage,stdio:'inherit',env:{...process.env,TMPDIR:testTmp,TMP:testTmp,TEMP:testTmp}});}finally{rmSync(testTmp,{recursive:true,force:true});rmSync(coreTest,{recursive:true,force:true});}
+
 const info={productName,version,upstreamVersion:lock.version,upstreamTag:lock.tag,upstreamBaseCommit:lock.baseCommit,upstreamSnapshotHash:sha(readFileSync(join(root,'upstream-lock.json'))),downstreamCommit:git('rev-parse','HEAD').toString().trim(),coreIntegrity:'SHA-256 verified working-tree snapshot; manifest and product icons are packaging overrides',builtAt:new Date().toISOString()};
 writeFileSync(join(stage,'BUILD-INFO.json'),JSON.stringify(info,null,2));
 cpSync(join(root,'upstream-lock.json'),join(stage,'upstream-lock.json'));
-cpSync(join(root,'docs/疯狂的梦溪_版本说明.md'),join(stage,'版本说明.md'));
+cpSync(join(root,'docs/回声_版本说明.md'),join(stage,'版本说明.md'));
 if(existsSync(product)){if(!existsSync(join(product,'BUILD-INFO.json')))throw Error('Refusing to replace unknown output');rmSync(product,{recursive:true});}renameSync(stage,product);
 // Dependency-free ZIP (stored entries, UTF-8 names), suitable for macOS/Windows.
 function crc(data){let c=0xffffffff;for(const b of data){c^=b;for(let k=0;k<8;k++)c=(c>>>1)^((c&1)?0xedb88320:0);}return (c^0xffffffff)>>>0;}

@@ -1,11 +1,12 @@
 // One explicitly submitted draft at a time. Never starts from generation alone.
 const AutoReply=(()=>{
  const active=t=>t&&['waiting_notice','countdown','claiming','sending'].includes(t.state);
- const config=async()=>({enabled:false,...await AddonState.read('autoReplyConfig',{})});
+ const config=async()=>typeof LocalMode!=='undefined'&&LocalMode.active?{enabled:false}:{enabled:false,...await AddonState.read('autoReplyConfig',{})};
  async function cancel(reason='已取消自动发表',tid,ref){
   await AddonState.update('autoReplyTask',t=>active(t)&&(!tid||t.tid===String(tid))&&(!ref||t.draftRef===ref)?{...t,state:'cancelled',reason,...(t.state==='sending'?{submissionStartedAt:t.submissionStartedAt||Date.now()}:{})}:t,null);
  }
  async function setEnabled(enabled){
+  if(enabled&&typeof LocalMode!=='undefined'&&LocalMode.active)throw Error('本机读取模式需要逐条确认，不支持超时自动发表');
   if(typeof enabled!=='boolean')throw new Error('开关值无效');
   await AddonState.write('autoReplyConfig',{enabled});
   if(!enabled)await cancel('开关已关闭');

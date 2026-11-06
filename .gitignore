@@ -16,3 +16,9 @@ dist/
 dist/
 *队列备份*.json
 截图识别*/
+
+backups/
+*.sqlite*
+pairing-code
+telegram-token
+kimi-key

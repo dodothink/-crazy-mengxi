@@ -1,9 +1,9 @@
-document.getElementById('coreControl').onclick=()=>chrome.tabs.create({url:chrome.runtime.getURL('control.html')});
+document.getElementById('coreControl').onclick=()=>act(async()=>{await refresh();const box=document.getElementById('localPostRecords');box.hidden=!box.hidden;box.textContent=(latest.posts||[]).map(p=>'帖子 '+p.tid+' · '+p.status+(p.error?' · '+p.error:'')).join('\n')||'暂无发表记录';});
 const $=id=>document.getElementById(id);let latest,threads=[],browserThreads=[],localThreads=[],archiveOffset=0,archiveQuery="";
 async function send(m){const r=await chrome.runtime.sendMessage(m);if(!r?.ok)throw new Error(r?.error||'后台没有响应');return r;}
-async function refresh(){latest=await send({type:'ADDON_STATUS'});$('status').textContent=`采集：${latest.haltCollect?'暂停':'允许运行'} · 发帖：${latest.haltPost?'暂停':'允许运行'} · 待采 ${latest.queued} 条`;
+async function refresh(){latest=await send({type:'ADDON_STATUS'});$('status').textContent=`数据：仅本机存档 · 下游采集：${latest.haltCollect?'已停用':'正在停止'} · 人工确认发帖：${latest.haltPost?'暂停':'允许'}`;
 if(latest.alertGap)$('status').textContent+=' · 有提醒缺失，请核对论坛';
-const archive=latest.archiveStatus;if(archive)$('status').textContent+=' · 存档：'+(archive.folderAuthNeeded?'需要重新授权':archive.mode==='folder'?'文件夹模式':'普通下载模式')+'，待写 '+archive.pendingWrites+' 帖';
+
 $('human').hidden=!latest.challenge;$('reason').textContent=latest.challenge?.reason||'';$('connection').textContent=latest.agentConnectedAt?'最近连接：'+new Date(latest.agentConnectedAt).toLocaleString():'尚未连接本地服务';
 $('events').textContent=latest.log.map(x=>new Date(x.at).toLocaleTimeString()+' '+x.type+(x.error?' · '+x.error:'')).join('\n')||'暂无事件';
 }
@@ -80,7 +80,7 @@ let autoState={enabled:false,task:null};
 function showAuto(r){
  autoState=r;const t=r.task;
  $('autoReplyToggle').setAttribute('aria-pressed',String(r.enabled));
- $('autoReplyToggle').textContent='5 分钟未审核自动发表 · '+(r.enabled?'已开启':'已关闭');
+ $('autoReplyToggle').textContent='逐条确认后发送 · 超时不发表';$('autoReplyToggle').disabled=true;
  const active=t&&['waiting_notice','countdown','claiming','sending'].includes(t.state);
  $('cancelAutoReply').hidden=!active;
  let text=r.enabled?'已开启。新跟踪草稿自动送审，通知送达后计时；手动草稿需点击送审。':'已关闭，所有回复由你在论坛确认发表。';

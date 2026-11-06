@@ -1,3 +1,5 @@
+import {searchArchives} from './archive-search.mjs';
+import {archiveWatch} from './archive-watch.mjs';
 import {aiSettings,completionRequest,checkQuota,completionText} from './ai-config.mjs';
 import {telegramControl,remotePermit} from './telegram-control.mjs';
 import {trackingPrompt} from './tracking-prompt.mjs';
@@ -25,6 +27,7 @@ const apiBase=config.apiBase||'https://api.moonshot.cn/v1';
 if(!['https://api.moonshot.cn/v1','https://api.moonshot.ai/v1'].includes(apiBase))throw new Error('仅允许 Moonshot 官方 API');
 // Model and adjustable limits are managed by aiSettings; credentials remain unchanged.
 const archives=archiveDataLibrary(process.env.MY0511_ARCHIVES || config.archiveDirectory || join(homedir(),'Downloads','My0511存档'),store);
+const archiveWatcher=archiveWatch(store,archives);
 const pairing={code:token(),expires:Date.now()+15*60000};
 writeFileSync(root+'pairing-code',pairing.code,{mode:0o600});
 if(!store.get('telegramBinding')){store.set('telegramBind',{code:token(),expires:Date.now()+15*60000});writeFileSync(root+'telegram-bind-code',store.get('telegramBind').code,{mode:0o600});}
@@ -59,6 +62,9 @@ const server=http.createServer(async(req,res)=>{
   if(req.url==='/track-notify'){if(typeof b.id!=='string'||!/^[-a-zA-Z0-9]{1,80}$/.test(b.id)||typeof b.text!=='string'||b.text.length>3500)throw Error('跟踪提醒无效');notify('track:'+client.profile+':'+b.id,b.text,{reply_markup:{inline_keyboard:[[{text:'打开手机控制台',callback_data:'ctl:menu'}]]}});return json(res,200,{ok:true});}
   if(req.url==='/services')return json(res,200,b.action==='save'?service.save(b.config||{}):service.status());
   if(req.url==='/report'){if(b.kind==='daily')return json(res,200,await service.daily());if(b.kind==='summary')return json(res,200,await service.summary(b.tid));throw Error('报告类型无效');}
+  if(req.url==='/archive-watch')return json(res,200,b.action==='save'?archiveWatcher.save(b.config):b.action==='check'?await archiveWatcher.check():b.action==='ack'?archiveWatcher.ack(b.tids):archiveWatcher.status());
+  if(req.url==='/archive-search')return json(res,200,await searchArchives(archives,b));
+  if(req.url==='/archive-thread')return json(res,200,await archives.thread(b.tid));
   if(req.url==='/archive-status'){try{await archives.sync();}catch{}return json(res,200,archives.status());}
   if(req.url==='/archives')return json(res,200,await archives.list(b));
   if(req.url==='/archive')return json(res,200,await archives.preview(b.id));
@@ -77,14 +83,15 @@ const server=http.createServer(async(req,res)=>{
    return json(res,200,{ok:true,acked,alertsAccepted,aiConfig:aiSettings(store),commands:store.pending(client.profile)});
   }
   if(req.url==='/auto-approval'){
-   if(b.action==='claim'&&polling)return json(res,200,{ok:true,busy:true});
+   if(b.action==='claim')throw Error('本版本需要逐条确认，不支持超时自动发表');
    return json(res,200,autoApproval(store,client.profile,b));
   }
   if(req.url==='/ai')return json(res,200,await generate(b));
   if(req.url==='/approval'){
    if(!store.get('telegramBinding'))throw new Error('Telegram 尚未绑定本人账号');
    if(!/^[-a-zA-Z0-9]{16,80}$/.test(b.draftRef||''))throw new Error('请重新加载开发版扩展后再次发起审批');
-   const autoAfterMs=b.autoAfterMs===300000?300000:0;
+   if(b.autoAfterMs)throw Error('本版本需要逐条确认，请重新加载扩展');
+   const autoAfterMs=0;
    const d=draft(b),id=token().slice(0,20);store.set('activeApproval:'+client.profile+':'+d.tid,id);store.set('approval:'+id,{profile:client.profile,draft:d,draftRef:b.draftRef,autoAfterMs,digest:hash(JSON.stringify(d)),state:'pending',expires:Date.now()+15*60000});
    const instruction=autoAfterMs?'已开启超时自动发表：本通知送达 5 分钟后，若没有采用或拒绝，将尝试直接发表。拒绝可取消；采用仍仅填入电脑回复框。电脑离线或发帖暂停时不会补发。':'15 分钟内有效。采用后仅填入电脑回复框，最后在论坛点击发表。';
    notify('approval:'+id,`回复草稿 · 帖子 ${d.tid}\n\n${d.message}\n\n${instruction}`,{reply_markup:{inline_keyboard:[[{text:'手机控制台 / 任务审核',callback_data:'ctl:menu'}],[{text:'采用草稿（仅填入）',callback_data:'approve:'+id},{text:'拒绝 / 取消自动发表',callback_data:'reject:'+id}]]}});return json(res,200,{ok:true,id,autoAfterMs});

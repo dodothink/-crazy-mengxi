@@ -62,8 +62,12 @@ export function archiveDataLibrary(directory,store){
    }
    if(!reset&&previous.hashes?.[tid]!==e.jsonSha256)changed++;
    const ready=e.complete===true&&!e.lastFailure;
+   const c=e.capture,b=record.data.capture;
+   const validCapture=x=>x?.known===true&&x.ok===true&&x.scope==='incremental'&&x.complete===false&&!x.reason&&Array.isArray(x.pagesRead)&&x.pagesRead.length===2&&x.pagesRead.every(n=>Number.isSafeInteger(n)&&n>0)&&x.pagesRead[0]<=x.pagesRead[1]&&Number.isSafeInteger(x.totalPages)&&x.pagesRead[1]===x.totalPages;
+   const incremental=e.complete===false&&!e.lastFailure&&validCapture(c)&&validCapture(b)&&JSON.stringify(c)===JSON.stringify(b);
+   const analysisReady=ready||incremental;
    if(!ready)incomplete++;
-   hashes[tid]=e.jsonSha256;next.set(tid,{...record,entry:e,ready});
+   hashes[tid]=e.jsonSha256;next.set(tid,{...record,entry:e,ready,analysisReady,incremental});
   }
   // All-or-nothing: a failed read cannot advance the cursor past an unread change.
   const state={sourceId:m.sourceId,generation:m.generation,cursor:m.seq,hashes,baselineAt:reset?Date.now():previous.baselineAt,checkedAt:Date.now(),coverage:m.coverage,total:next.size,unavailable,incomplete,changed:reset?0:changed,verified,mode:reset?'baseline':'reconcile'};
@@ -76,11 +80,11 @@ export function archiveDataLibrary(directory,store){
   inflight=scan().catch(e=>{lastError=e.message;throw e;}).finally(()=>{inflight=null;});return inflight;
  }
  async function ensure(refresh=false){if(refresh||!manifest||lastError||Date.now()-lastCheck>30000)await sync();}
- function status(){const s=store.get(KEY,null);return {ok:!!s&&!lastError,protocolVersion:1,source:'_data',coverage:s?.coverage||null,total:s?.total||0,cursor:s?.cursor??null,generation:s?.generation??null,incomplete:s?.incomplete||0,unavailable:s?.unavailable||0,baselineAt:s?.baselineAt||null,checkedAt:lastCheck||s?.checkedAt||null,mode:s?.mode||'waiting',error:lastError};}
+ function status(){const s=store.get(KEY,null);return {ok:!!s&&!lastError,protocolVersion:1,sourceId:s?.sourceId||null,source:'_data',coverage:s?.coverage||null,total:s?.total||0,cursor:s?.cursor??null,generation:s?.generation??null,incomplete:s?.incomplete||0,unavailable:s?.unavailable||0,baselineAt:s?.baselineAt||null,checkedAt:lastCheck||s?.checkedAt||null,mode:s?.mode||'waiting',error:lastError};}
  function view(tid,r){
   const d=r.data,e=r.entry;
   const floors=[...d.floors,...(d.foldedFloors||[])].sort((a,b)=>a.floor-b.floor).map(f=>({...f,heading:[f.author||'未知作者',f.time||'时间未知'].join(' · '),archiveData:true}));
-  return {...d,tid,id:tid,count:floors.length,floors,fileName:e.jsonFile,capturedAt:forumTime(d.capturedAt),mtime:Date.parse(d.writtenAt)||0,complete:r.ready,warning:r.ready?null:'本次采集不完整或完整性未知；仅代表已存内容',lastFailure:e.lastFailure||null};
+  return {...d,tid,id:tid,count:floors.length,floors,fileName:e.jsonFile,capturedAt:forumTime(d.capturedAt),mtime:Date.parse(d.writtenAt)||0,complete:r.ready,analysisReady:r.analysisReady,captureScope:r.incremental?'incremental':r.ready?'full':'unknown',warning:r.incremental?'成功增量更新，仅依据已存楼层分析，不代表全帖重新采集':r.ready?null:'本次采集不完整或完整性未知；仅代表已存内容',lastFailure:e.lastFailure||null};
  }
  async function get(tid){await ensure();if(!/^\d+$/.test(String(tid))||!cache.has(String(tid)))throw Error('机读存档中没有该帖，请刷新列表');return view(String(tid),cache.get(String(tid)));}
  async function list({query='',offset=0,refresh=false}={}){
@@ -90,8 +94,9 @@ export function archiveDataLibrary(directory,store){
   return {ok:true,directory:join(directory,'_data'),total:cache.size,skipped:s.unavailable,matched:found.length,offset:start,hasMore:start+100<found.length,items:found.slice(start,start+100),reader:s,scannedAt:lastCheck};
  }
  async function preview(tid){const r=await get(tid),text=[r.title,r.url,r.warning||'完整采集',...r.floors.map(f=>`${f.floor}楼 · ${f.heading}\n${f.hidden?'[本楼不可见]\n':''}${f.quote?'引用：'+f.quote+'\n':''}${f.text}`)].join('\n\n');return {ok:true,tid:r.tid,title:r.title,text:text.slice(0,60000),truncated:text.length>60000,complete:r.complete};}
- async function context(tid){const r=await get(tid);if(!r.complete)throw Error('本次采集不完整或完整性未知，请先由上游完成完整采集');const f=r.floors.filter(x=>!x.hidden),chosen=[...f.slice(0,3),...f.slice(3).slice(-12)],body={title:r.title,tid:r.tid,source:'已校验机读存档 v1',floors:[]};for(const x of chosen){const item={floor:x.floor,author:x.author,text:x.text.slice(0,1400)};if(JSON.stringify({...body,floors:[...body.floors,item]}).length>24000)break;body.floors.push(item);}return JSON.stringify(body);}
+ async function context(tid){const r=await get(tid);if(!r.analysisReady)throw Error('本次采集不完整或状态未知，请等待上游成功采集');const f=r.floors.filter(x=>!x.hidden),chosen=[...f.slice(0,3),...f.slice(3).slice(-12)],body={title:r.title,tid:r.tid,source:'已校验机读存档 v1',captureScope:r.captureScope,warning:r.warning,floors:[]};for(const x of chosen){const item={floor:x.floor,author:x.author,text:x.text.slice(0,1400)};if(JSON.stringify({...body,floors:[...body.floors,item]}).length>24000)break;body.floors.push(item);}return JSON.stringify(body);}
  async function records(){await ensure();return [...cache].map(([tid,r])=>view(tid,r));}
+ async function thread(tid){await sync();const r=await get(tid),entry=cache.get(String(tid));return {ok:true,source:{kind:"local-archive-v1",sourceId:manifest.sourceId,generation:manifest.generation,hash:entry.hash,revision:r.revision,complete:r.complete,analysisReady:r.analysisReady,captureScope:r.captureScope,warning:r.warning,capturedAt:r.capturedAt,writtenAt:r.writtenAt,checkedAt:lastCheck,lastFailure:r.lastFailure},thread:{tid:r.tid,fid:r.fid,title:r.title,url:r.url},floors:r.floors.map(f=>({floor:f.floor,author:f.author,text:f.text,hiddenAt:f.hidden?f.hiddenSince||true:null}))};}
  async function byTid(tid){const r=await get(tid);return {...r,sources:[r]};}
- return {sync,status,list,preview,context,records,byTid};
+ return {sync,status,list,preview,context,records,byTid,thread};
 }

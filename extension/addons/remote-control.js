@@ -7,7 +7,7 @@ const RemoteControl=(()=>{
   if(m.op==='auto'){if(typeof m.enabled!=='boolean')throw Error('自动发表开关无效');await AutoReply.setEnabled(m.enabled);return {ok:true,info:'自动发表已'+(m.enabled?'开启；只对新草稿生效':'关闭')};}
   if(m.op==='cancelAuto'){const a=(await AutoReply.status()).task;if(a)await Bridge.invalidateApproval(a.tid);return {ok:true,info:'已取消尚未提交的自动发表'};}
   if(m.op==='pauseTasks'){await ThreadTracker.pauseAll();return {ok:true,info:'全部跟踪任务已暂停'};}
-  if(m.op==='add'){await ThreadTracker.save(m);return {ok:true,info:'任务已添加；首次采集建立基线'};}
+  if(m.op==='add'){await ThreadTracker.save(m);return {ok:true,info:'任务已添加并开启：'+m.url+'；首次读取本机存档建立基线，缺少存档时等待上游更新。回复须逐条确认。'};}
   const t=(await ThreadTracker.list()).items.find(x=>x.tid===m.tid);if(!t||t.revision!==m.revision)throw Error('任务已变化或移除，请刷新手机任务列表');
   if(m.op==='toggle'){if(typeof m.enabled!=='boolean')throw Error('任务开关无效');await ThreadTracker.toggle(t.tid,m.enabled);}
   else if(m.op==='remove')await ThreadTracker.remove(t.tid);
@@ -19,7 +19,7 @@ const RemoteControl=(()=>{
    else if(m.op==='send')return publish(t,m,command);
    else throw Error('不支持的手机操作');
   }
-  return {ok:true,info:({toggle:m.enabled?'任务已恢复':'任务已暂停',remove:'任务已移除，存档保留',rules:'回复规则已更新，旧草稿和倒计时已取消',hold:'旧审批及倒计时已取消，可以修改草稿',edit:'草稿已保存，没有自动发表',dismiss:'草稿已拒绝，未提交的发表已取消'})[m.op]};
+  return {ok:true,info:({toggle:m.enabled?'任务已恢复':'任务已暂停',remove:'任务 '+t.tid+' 已移除，存档和已发表回复保留',rules:'回复规则已更新，旧草稿和倒计时已取消',hold:'旧审批及倒计时已取消，可以修改草稿',edit:'草稿已保存，没有自动发表',dismiss:'草稿已拒绝，未提交的发表已取消'})[m.op]};
  }
  async function publish(t,m,c){
   if(!c?.id||c.expires<Date.now()||t.draft.message!==m.message)throw Error('发表确认已过期或正文已变化');

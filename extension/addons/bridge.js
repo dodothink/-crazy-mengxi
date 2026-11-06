@@ -1,11 +1,11 @@
 // Only a per-installation localhost token is stored in the extension.
 const Bridge=(()=>{
  const base='http://127.0.0.1:17851';
- async function call(path,body,auth=true){const p=await AddonState.read('agentPairing',null);if(auth&&!p)throw new Error('请先连接本地服务');const r=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json','X-Extension-Id':chrome.runtime.id,...(auth?{Authorization:'Bearer '+p.token}:{})},body:JSON.stringify(body),signal:AbortSignal.timeout(path==='/report'?300000:['/ai','/archive-ai','/archives','/track-ai'].includes(path)?190000:10000)});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'本地服务请求失败');return j;}
+ async function call(path,body,auth=true){const p=await AddonState.read('agentPairing',null);if(auth&&!p)throw new Error('请先连接本地服务');const r=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json','X-Extension-Id':chrome.runtime.id,...(auth?{Authorization:'Bearer '+p.token}:{})},body:JSON.stringify(body),signal:AbortSignal.timeout(path==='/report'?300000:['/ai','/archive-ai','/archives','/archive-search','/track-ai'].includes(path)?190000:10000)});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'本地服务请求失败');return j;}
  async function pair(code){await AddonState.ready;const s=await My0511API.status();const r=await call('/pair',{code,profile:s.profileId},false);await AddonState.write('agentPairing',{token:r.token});return sync();}
  let syncing=null;
  function sync(){if(syncing)return syncing;const pending=AddonState.serial('bridge-sync',async()=>{
-  await AddonState.ready;
+  await AddonState.ready;await LocalMode.ready;await LocalMode.enforce();
   if(!await AddonState.read('agentPairing',null))throw Error('请先连接本地服务');
   await My0511API.refreshChallenge();
   const receipts=await AddonState.read('remoteReceipts',{});
@@ -16,7 +16,6 @@ const Bridge=(()=>{
   const pendingAlerts=await AddonState.read('alertOutbox',[]);
   const alerts=[...new Map([...page.items,...pendingAlerts].map(a=>[a.seq?'seq:'+a.seq:a.id,a])).values()].slice(0,300);
   const archiveWrites=await AddonState.read('archiveWrites',{});
-  for(const tid of new Set(alerts.filter(a=>['edit','hidden'].includes(a.kind)&&!(archiveWrites[a.tid]?.capturedAt>=a.at)).map(a=>a.tid))){const record=await My0511API.getThread(tid);if(record?.exportedAt>=record?.updatedAt&&record?.updatedAt)archiveWrites[tid]={revision:record.exportedAt,capturedAt:record.updatedAt};}
   await AddonState.write('archiveWrites',archiveWrites);
   const status={...await AddonControl.status(),tracking:await RemoteControl.snapshot()};
   const r=await call('/sync',{status,archiveWrites,settings:await My0511API.settings(),alerts,acks:Object.entries(receipts).filter(([,v])=>v.result&&!v.acked).map(([id,v])=>({id,result:v.result}))});
@@ -45,7 +44,8 @@ const Bridge=(()=>{
   return {ok:true};
  });syncing=pending;pending.finally(()=>{if(syncing===pending)syncing=null;}).catch(()=>{});return pending;}
  async function finish(id,result){await AddonState.update('remoteReceipts',v=>{v[id]={...v[id],result};const entries=Object.entries(v).sort((a,b)=>b[1].startedAt-a[1].startedAt).slice(0,200);return Object.fromEntries(entries);},{});}
- async function ai(tid,prompt=''){if(!/^\d+$/.test(String(tid)))throw new Error('帖子无效');const record=await My0511API.getThread(tid);if(!record)throw new Error('尚未存档帖子');const floors=Object.values(record.floors||{}).sort((a,b)=>(a.floor||0)-(b.floor||0));const chosen=[...floors.slice(0,3),...floors.slice(3).slice(-12)];const context=JSON.stringify({title:record.thread?.title,tid,floors:chosen.map(f=>({floor:f.floor,author:f.author,text:f.text?.slice(0,4000)}))}).slice(0,24000);return call('/ai',{context,prompt});}
+
+ async function ai(tid,prompt=''){return call('/archive-ai',{id:String(tid),prompt});}
  async function invalidateApproval(tid){if(typeof ThreadTracker!=='undefined')await ThreadTracker.blockManual(tid);await AutoReply.cancel('草稿已修改或已取消',tid);await AddonState.update('pendingApprovals',v=>{delete v[String(tid)];return v;},{});return {ok:true};}
  async function approval(msg){
   const draft={tid:String(msg.tid),fid:String(msg.fid),message:msg.message},draftRef=AddonState.id();
