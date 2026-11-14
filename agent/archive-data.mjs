@@ -45,7 +45,7 @@ export function archiveDataLibrary(directory,store){
   const reset=!previous||previous.sourceId!==m.sourceId||previous.generation!==m.generation||m.seq<previous.cursor||previous.cursor+1<(m.journal?.firstSeq||0);
   // Rebuilds and source changes establish a safe new baseline, never replay history.
   if((reset||!manifest)&&m.coverage!=='full')throw Error('机读存档尚未补齐，等待上游覆盖范围变为“全部”');
-  const next=new Map(),hashes={};let changed=0,unavailable=0,incomplete=0,verified=0;
+  const next=new Map(),hashes={},contentHashes=previous?.sourceId===m.sourceId?{...previous.contentHashes}:{};let changed=0,unavailable=0,incomplete=0,verified=0;
   for(const [tid,e] of Object.entries(m.threads)){
    if(e.mdMissing||(!e.revision&&!e.jsonFile)){unavailable++;continue;}
    let record=cache.get(tid);
@@ -60,18 +60,22 @@ export function archiveDataLibrary(directory,store){
     if(floors.some(f=>!Number.isSafeInteger(f.floor)||f.floor<1||typeof f.text!=='string')||new Set(floors.map(f=>f.floor)).size!==floors.length)throw Error(`帖子 ${tid} 楼层数据无效`);
     record={hash:e.jsonSha256,data};verified++;
    }
-   if(!reset&&previous.hashes?.[tid]!==e.jsonSha256)changed++;
+   const mdHash=e.mdSha256||record.data.mdSha256;
+   if(mdHash&&(!/^[a-f0-9]{64}$/.test(mdHash)||(e.mdSha256&&record.data.mdSha256&&e.mdSha256!==record.data.mdSha256)))throw Error(`帖子 ${tid} 正文校验标识不一致`);
+   const contentHash=mdHash?'md:'+mdHash:'json:'+e.jsonSha256;
+   if(!reset&&previous.contentHashes&&previous.contentHashes[tid]!==contentHash)changed++;
+   contentHashes[tid]=contentHash;
    const ready=e.complete===true&&!e.lastFailure;
    const c=e.capture,b=record.data.capture;
    const validCapture=x=>x?.known===true&&x.ok===true&&x.scope==='incremental'&&x.complete===false&&!x.reason&&Array.isArray(x.pagesRead)&&x.pagesRead.length===2&&x.pagesRead.every(n=>Number.isSafeInteger(n)&&n>0)&&x.pagesRead[0]<=x.pagesRead[1]&&Number.isSafeInteger(x.totalPages)&&x.pagesRead[1]===x.totalPages;
    const incremental=e.complete===false&&!e.lastFailure&&validCapture(c)&&validCapture(b)&&JSON.stringify(c)===JSON.stringify(b);
    const analysisReady=ready||incremental;
    if(!ready)incomplete++;
-   hashes[tid]=e.jsonSha256;next.set(tid,{...record,entry:e,ready,analysisReady,incremental});
+   hashes[tid]=e.jsonSha256;next.set(tid,{...record,contentHash,entry:e,ready,analysisReady,incremental});
   }
   // All-or-nothing: a failed read cannot advance the cursor past an unread change.
-  const state={sourceId:m.sourceId,generation:m.generation,cursor:m.seq,hashes,baselineAt:reset?Date.now():previous.baselineAt,checkedAt:Date.now(),coverage:m.coverage,total:next.size,unavailable,incomplete,changed:reset?0:changed,verified,mode:reset?'baseline':'reconcile'};
-  if(reset||previous.cursor!==m.seq||previous.coverage!==m.coverage||previous.total!==state.total||previous.unavailable!==unavailable||previous.incomplete!==incomplete||previous.changed!==state.changed)store.set(KEY,state);
+  const state={sourceId:m.sourceId,generation:m.generation,cursor:m.seq,hashes,contentHashes,baselineAt:reset?Date.now():previous.baselineAt,checkedAt:Date.now(),coverage:m.coverage,total:next.size,unavailable,incomplete,changed:reset?0:changed,verified,mode:reset?'baseline':'reconcile'};
+  if(reset||!previous.contentHashes||previous.cursor!==m.seq||previous.coverage!==m.coverage||previous.total!==state.total||previous.unavailable!==unavailable||previous.incomplete!==incomplete||previous.changed!==state.changed||JSON.stringify(previous.hashes)!==JSON.stringify(hashes))store.set(KEY,state);
   cache=next;manifest=m;lastCheck=Date.now();lastError=null;
   return status();
  }
@@ -80,7 +84,7 @@ export function archiveDataLibrary(directory,store){
   inflight=scan().catch(e=>{lastError=e.message;throw e;}).finally(()=>{inflight=null;});return inflight;
  }
  async function ensure(refresh=false){if(refresh||!manifest||lastError||Date.now()-lastCheck>30000)await sync();}
- function status(){const s=store.get(KEY,null);return {ok:!!s&&!lastError,protocolVersion:1,sourceId:s?.sourceId||null,source:'_data',coverage:s?.coverage||null,total:s?.total||0,cursor:s?.cursor??null,generation:s?.generation??null,incomplete:s?.incomplete||0,unavailable:s?.unavailable||0,baselineAt:s?.baselineAt||null,checkedAt:lastCheck||s?.checkedAt||null,mode:s?.mode||'waiting',error:lastError};}
+ function status(){const s=store.get(KEY,null);return {ok:!!s&&!lastError,protocolVersion:1,contentIdentity:'mdSha256',sourceId:s?.sourceId||null,source:'_data',coverage:s?.coverage||null,total:s?.total||0,cursor:s?.cursor??null,generation:s?.generation??null,incomplete:s?.incomplete||0,unavailable:s?.unavailable||0,baselineAt:s?.baselineAt||null,checkedAt:lastCheck||s?.checkedAt||null,mode:s?.mode||'waiting',error:lastError};}
  function view(tid,r){
   const d=r.data,e=r.entry;
   const floors=[...d.floors,...(d.foldedFloors||[])].sort((a,b)=>a.floor-b.floor).map(f=>({...f,heading:[f.author||'未知作者',f.time||'时间未知'].join(' · '),archiveData:true}));
@@ -96,7 +100,7 @@ export function archiveDataLibrary(directory,store){
  async function preview(tid){const r=await get(tid),text=[r.title,r.url,r.warning||'完整采集',...r.floors.map(f=>`${f.floor}楼 · ${f.heading}\n${f.hidden?'[本楼不可见]\n':''}${f.quote?'引用：'+f.quote+'\n':''}${f.text}`)].join('\n\n');return {ok:true,tid:r.tid,title:r.title,text:text.slice(0,60000),truncated:text.length>60000,complete:r.complete};}
  async function context(tid){const r=await get(tid);if(!r.analysisReady)throw Error('本次采集不完整或状态未知，请等待上游成功采集');const f=r.floors.filter(x=>!x.hidden),chosen=[...f.slice(0,3),...f.slice(3).slice(-12)],body={title:r.title,tid:r.tid,source:'已校验机读存档 v1',captureScope:r.captureScope,warning:r.warning,floors:[]};for(const x of chosen){const item={floor:x.floor,author:x.author,text:x.text.slice(0,1400)};if(JSON.stringify({...body,floors:[...body.floors,item]}).length>24000)break;body.floors.push(item);}return JSON.stringify(body);}
  async function records(){await ensure();return [...cache].map(([tid,r])=>view(tid,r));}
- async function thread(tid){await sync();const r=await get(tid),entry=cache.get(String(tid));return {ok:true,source:{kind:"local-archive-v1",sourceId:manifest.sourceId,generation:manifest.generation,hash:entry.hash,revision:r.revision,complete:r.complete,analysisReady:r.analysisReady,captureScope:r.captureScope,warning:r.warning,capturedAt:r.capturedAt,writtenAt:r.writtenAt,checkedAt:lastCheck,lastFailure:r.lastFailure},thread:{tid:r.tid,fid:r.fid,title:r.title,url:r.url},floors:r.floors.map(f=>({floor:f.floor,author:f.author,text:f.text,hiddenAt:f.hidden?f.hiddenSince||true:null}))};}
+ async function thread(tid){await sync();const r=await get(tid),entry=cache.get(String(tid));return {ok:true,source:{kind:"local-archive-v1",sourceId:manifest.sourceId,generation:manifest.generation,hash:entry.contentHash,jsonHash:entry.hash,revision:r.revision,complete:r.complete,analysisReady:r.analysisReady,captureScope:r.captureScope,warning:r.warning,capturedAt:r.capturedAt,writtenAt:r.writtenAt,checkedAt:lastCheck,lastFailure:r.lastFailure},thread:{tid:r.tid,fid:r.fid,title:r.title,url:r.url},floors:r.floors.map(f=>({floor:f.floor,author:f.author,text:f.text,hiddenAt:f.hidden?f.hiddenSince||true:null}))};}
  async function byTid(tid){const r=await get(tid);return {...r,sources:[r]};}
  return {sync,status,list,preview,context,records,byTid,thread};
 }

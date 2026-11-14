@@ -28,10 +28,10 @@ jobs:
           set -euo pipefail
           cp 发布安装说明.md dist/INSTALL.md
           cd dist
-          sha256sum MengxiEcho-4.2.5-agent.14.2.zip INSTALL.md > SHA256SUMS
+          sha256sum MengxiEcho-4.2.5-agent.16.zip INSTALL.md > SHA256SUMS
           cp INSTALL.md release-notes.md
-          if gh release view 'v4.2.5-agent.14.2' >/dev/null 2>&1; then
+          if gh release view 'v4.2.5-agent.16' >/dev/null 2>&1; then
             echo 'Release already exists; preserving its assets.'
             exit 0
           fi
-          gh release create 'v4.2.5-agent.14.2' 'MengxiEcho-4.2.5-agent.14.2.zip' INSTALL.md SHA256SUMS --target "$GITHUB_SHA" --title '梦溪·回声 v4.2.5-agent.14.2' --notes-file release-notes.md
+          gh release create 'v4.2.5-agent.16' 'MengxiEcho-4.2.5-agent.16.zip' INSTALL.md SHA256SUMS --target "$GITHUB_SHA" --title '梦溪·回声 v4.2.5-agent.16' --notes-file release-notes.md

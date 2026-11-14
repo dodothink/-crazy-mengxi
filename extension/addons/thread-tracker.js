@@ -33,6 +33,7 @@ const ThreadTracker=(()=>{
  async function blockManual(tid){await update(tid,t=>t.draft?.attemptRef?{...t,draft:{...t.draft,manualCancelled:true}}:t);}
  async function hold(tid,id){await update(tid,t=>{if(t.draft?.id!==id)throw Error('草稿已变化');return {...t,notice:null,reviewHold:true,autoApprovalId:null,note:'手机正在审核，已取消旧倒计时'};});await Bridge.invalidateApproval(tid);}
  async function claimManual(tid,id,message,ref){await update(tid,t=>{if(!t.enabled||t.draft?.id!==id||t.draft.message!==message||t.draft.attemptRef)throw Error('草稿已变化或已尝试发表，请核对记录');return {...t,draft:{...t.draft,attemptRef:ref},notice:null,note:'手机确认发表，正在核验'};});}
+ async function releaseManual(tid,id,ref){await update(tid,t=>{if(t.draft?.id!==id||t.draft.attemptRef!==ref)return t;const draft={...t.draft};delete draft.attemptRef;return {...t,draft,note:'已批准，等待发帖间隔'};});}
  async function finishManual(tid,id,ref){await update(tid,t=>t.draft?.id===id&&t.draft.attemptRef===ref?{...t,draft:null,notice:null,autoApprovalId:null,lastPostedAt:Date.now(),note:'手机回复已确认发表成功'}:t);}
  async function failManual(tid,id,ref,error){await update(tid,t=>t.draft?.id===id&&t.draft.attemptRef===ref?{...t,lastError:error,note:'发表未确认，不会自动重试，请核对论坛记录'}:t);}
  async function tick(){return AddonState.serial('tracker-queue',async()=>{
@@ -40,7 +41,7 @@ const ThreadTracker=(()=>{
   for(const t of Object.values(await read())){
    if(!t.enabled)continue;
    if(t.localSource&&t.notice&&!t.reviewHold){
-    try{await Bridge.request('/track-notify',{id:t.notice.id,tid:t.tid,text:t.notice.text+'\n必须逐条确认；不会超时自动发表。'});await update(t.tid,x=>x.notice?.id===t.notice.id?{...x,notice:null}:x);}catch(e){await update(t.tid,x=>({...x,lastError:'手机提醒未送达：'+e.message}));}
+    try{await Bridge.sync();await Bridge.request('/track-notify',{id:t.notice.id,tid:t.tid,text:t.notice.text+'\n必须逐条确认；不会超时自动发表。'});await update(t.tid,x=>x.notice?.id===t.notice.id?{...x,notice:null}:x);}catch(e){await update(t.tid,x=>({...x,lastError:'手机提醒未送达：'+e.message}));}
    }
    if(t.localSource&&t.nextAt>Date.now())continue;
    await update(t.tid,x=>({...x,nextAt:Date.now()+60000,queuedAt:null}));
@@ -79,5 +80,5 @@ const ThreadTracker=(()=>{
  chrome.alarms.get('thread-tracker').then(a=>{if(!a||a.periodInMinutes!==1)chrome.alarms.create('thread-tracker',{periodInMinutes:1});});
  chrome.alarms.onAlarm.addListener(a=>{if(a.name==='thread-tracker')tick().catch(()=>{});});
 
- return {list,save,toggle,tick,process,action,configure,assertQuote,remove,pauseAll,hold,claimManual,finishManual,failManual,blockManual};
+ return {list,save,toggle,tick,process,action,configure,assertQuote,remove,pauseAll,hold,claimManual,releaseManual,finishManual,failManual,blockManual};
 })();

@@ -59,7 +59,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.url==='/ai-config'){const cfg=aiSettings(store,b.action==='save'?b.config:undefined);return json(res,200,{ok:true,config:cfg,usedToday:store.get('ai:'+new Date().toISOString().slice(0,10),0)});}
   if(req.url==='/remote-guard')return json(res,200,remotePermit(store,client.profile,b.id));
   if(req.url==='/track-ai')return json(res,200,await generate({context:b.context,summary:true,prompt:trackingPrompt}));
-  if(req.url==='/track-notify'){if(typeof b.id!=='string'||!/^[-a-zA-Z0-9]{1,80}$/.test(b.id)||typeof b.text!=='string'||b.text.length>3500)throw Error('跟踪提醒无效');notify('track:'+client.profile+':'+b.id,b.text,{reply_markup:{inline_keyboard:[[{text:'打开手机控制台',callback_data:'ctl:menu'}]]}});return json(res,200,{ok:true});}
+  if(req.url==='/track-notify'){if(typeof b.id!=='string'||!/^[-a-zA-Z0-9]{1,80}$/.test(b.id)||typeof b.text!=='string'||b.text.length>3500)throw Error('跟踪提醒无效');const tracked=store.get('status')?.tracking?.items?.find(t=>t.tid===b.tid&&t.draft?.id===b.id);if(tracked)mobile.notifyDraft('track:'+client.profile+':'+b.id,tracked);else notify('track:'+client.profile+':'+b.id,b.text,{reply_markup:{inline_keyboard:[[{text:'打开手机控制台',callback_data:'ctl:menu'}]]}});return json(res,200,{ok:true});}
   if(req.url==='/services')return json(res,200,b.action==='save'?service.save(b.config||{}):service.status());
   if(req.url==='/report'){if(b.kind==='daily')return json(res,200,await service.daily());if(b.kind==='summary')return json(res,200,await service.summary(b.tid));throw Error('报告类型无效');}
   if(req.url==='/archive-watch')return json(res,200,b.action==='save'?archiveWatcher.save(b.config):b.action==='check'?await archiveWatcher.check():b.action==='ack'?archiveWatcher.ack(b.tids):archiveWatcher.status());
@@ -94,7 +94,8 @@ const server=http.createServer(async(req,res)=>{
    const autoAfterMs=0;
    const d=draft(b),id=token().slice(0,20);store.set('activeApproval:'+client.profile+':'+d.tid,id);store.set('approval:'+id,{profile:client.profile,draft:d,draftRef:b.draftRef,autoAfterMs,digest:hash(JSON.stringify(d)),state:'pending',expires:Date.now()+15*60000});
    const instruction=autoAfterMs?'已开启超时自动发表：本通知送达 5 分钟后，若没有采用或拒绝，将尝试直接发表。拒绝可取消；采用仍仅填入电脑回复框。电脑离线或发帖暂停时不会补发。':'15 分钟内有效。采用后仅填入电脑回复框，最后在论坛点击发表。';
-   notify('approval:'+id,`回复草稿 · 帖子 ${d.tid}\n\n${d.message}\n\n${instruction}`,{reply_markup:{inline_keyboard:[[{text:'手机控制台 / 任务审核',callback_data:'ctl:menu'}],[{text:'采用草稿（仅填入）',callback_data:'approve:'+id},{text:'拒绝 / 取消自动发表',callback_data:'reject:'+id}]]}});return json(res,200,{ok:true,id,autoAfterMs});
+   const tracked=store.get('status')?.tracking?.items?.find(t=>t.tid===d.tid&&t.draft?.message===d.message);
+   notify('approval:'+id,`回复草稿 · 帖子 ${d.tid}\n\n${d.message}\n\n${tracked?'点击批准即进入发帖队列；正文变化后卡片失效。':instruction}`,{reply_markup:{inline_keyboard:[...(tracked?[[mobile.draftButton(tracked)]]:[]),[{text:'手机控制台 / 任务审核',callback_data:'ctl:menu'}],[{text:'采用草稿（仅填入）',callback_data:'approve:'+id},{text:'拒绝 / 取消自动发表',callback_data:'reject:'+id}]]}});return json(res,200,{ok:true,id,autoAfterMs});
   }
   return json(res,404,{ok:false,error:'未知接口'});
  }catch(e){json(res,400,{ok:false,error:e.message==='fetch failed'?'服务连接失败':e.message});}

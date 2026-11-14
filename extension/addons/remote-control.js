@@ -24,11 +24,16 @@ const RemoteControl=(()=>{
  async function publish(t,m,c){
   if(!c?.id||c.expires<Date.now()||t.draft.message!==m.message)throw Error('发表确认已过期或正文已变化');
   const auto=(await AutoReply.status()).task;if(auto?.tid===t.tid&&auto.message===m.message&&(['claiming','sending','done'].includes(auto.state)||auto.submissionStartedAt))throw Error('同一草稿已尝试自动发表，请先核对论坛记录，不能重复发送');
-  await ThreadTracker.hold(t.tid,m.id);await AddonState.assertRunnable();
+  if(!t.enabled||t.draft.manualCancelled)throw Error('任务已暂停或取消');
+  await Bridge.request('/remote-guard',{id:c.id});
+  await AddonState.assertRunnable();
+  if(typeof My0511API.postAvailability!=='function')throw Error('请更新扩展以使用已批准队列');
+  const availability=await My0511API.postAvailability({tid:t.tid,fid:t.fid});if(!availability.ok)return availability;
+  await ThreadTracker.hold(t.tid,m.id);
   const ref='tg-'+c.id;
   const guard=async item=>{if(c.expires<Date.now())throw Error('手机发表确认已过期');const now=(await ThreadTracker.list()).items.find(x=>x.tid===t.tid);if(!now?.enabled||now.revision!==t.revision||now.draft?.id!==m.id||now.draft?.message!==m.message||now.draft?.attemptRef!==ref||now.draft?.manualCancelled)throw Error('任务已暂停、取消或草稿已变化');await AddonState.assertRunnable();await ThreadTracker.assertQuote(t.tid,m.message);await Bridge.request('/remote-guard',{id:c.id});};
   await ThreadTracker.claimManual(t.tid,m.id,m.message,ref);
-  try{const result=await My0511API.postOnce({ref,tid:t.tid,fid:t.fid,message:m.message},guard);if(!result?.ok)throw Error(result?.error||'未确认发表成功，请核对论坛记录，不自动重试');await ThreadTracker.finishManual(t.tid,m.id,ref);return {ok:true,info:'论坛已确认发表成功：帖子 '+t.tid};}catch(e){await ThreadTracker.failManual(t.tid,m.id,ref,e.message);throw e;}
+  try{const result=await My0511API.postOnce({ref,tid:t.tid,fid:t.fid,message:m.message,expectedAuthor:t.myName},guard);if(result?.deferred){await ThreadTracker.releaseManual(t.tid,m.id,ref);return result;}if(!result?.ok)throw Error(result?.error||'未确认发表成功，请核对论坛记录，不自动重试');await ThreadTracker.finishManual(t.tid,m.id,ref);return {ok:true,info:'论坛已确认发表成功：帖子 '+t.tid};}catch(e){await ThreadTracker.failManual(t.tid,m.id,ref,e.message);throw e;}
  }
  return {snapshot,execute};
 })();

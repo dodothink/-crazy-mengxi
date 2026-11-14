@@ -17,14 +17,19 @@ const Bridge=(()=>{
   const alerts=[...new Map([...page.items,...pendingAlerts].map(a=>[a.seq?'seq:'+a.seq:a.id,a])).values()].slice(0,300);
   const archiveWrites=await AddonState.read('archiveWrites',{});
   await AddonState.write('archiveWrites',archiveWrites);
-  const status={...await AddonControl.status(),tracking:await RemoteControl.snapshot()};
+  const status={...await AddonControl.status(),tracking:await RemoteControl.snapshot(),approvedQueue:Object.entries(receipts).filter(([,v])=>v.retryAt&&!v.result).map(([id,v])=>({id,retryAt:v.retryAt,reason:v.reason}))};
   const r=await call('/sync',{status,archiveWrites,settings:await My0511API.settings(),alerts,acks:Object.entries(receipts).filter(([,v])=>v.result&&!v.acked).map(([id,v])=>({id,result:v.result}))});
   if(r.aiConfig)await AddonState.write('aiConfig',r.aiConfig);
   if(r.alertsAccepted){const ids=new Set(r.alertsAccepted);await AddonState.update('alertOutbox',v=>v.filter(a=>!ids.has(a.id)),[]);if(page.items.every(a=>ids.has(a.id))){await AddonState.write('alertCursor',page.nextCursor);await My0511API.ackAlerts({consumer:'agent',cursor:page.nextCursor});}}
   await AddonState.write('agentConnection',{lastSeenAt:Date.now()});
   await AddonState.update('remoteReceipts',v=>{for(const id of r.acked||[])if(v[id]?.result)v[id].acked=true;return v;},{});
+  let sendWait=null;
   for(const c of r.commands){
    const seen=await AddonState.read('remoteReceipts',{});if(seen[c.id]?.result)continue;
+   const isSend=c.kind==='trackerControl'&&c.payload?.op==='send';
+   if(isSend&&sendWait){await AddonState.update('remoteReceipts',v=>({...v,[c.id]:{retryAt:sendWait,reason:'等待队列前面的回复',startedAt:Date.now()}}),{});continue;}
+   if(seen[c.id]?.retryAt>Date.now()){if(isSend)sendWait=seen[c.id].retryAt;continue;}
+   if(seen[c.id]?.retryAt)delete seen[c.id];
    if(seen[c.id]){await finish(c.id,{ok:false,error:'上次执行中断，请核实电脑现场，不自动重放'});continue;}
    await AddonState.update('remoteReceipts',v=>({...v,[c.id]:{startedAt:Date.now()}}),{});
    let result;try{
@@ -37,6 +42,7 @@ const Bridge=(()=>{
     else if(c.kind==='trackerControl')result=await RemoteControl.execute(c.payload,c);
     else if(c.kind==='adopt')result=await adoptApproved(c.payload);
     else throw new Error('指令不受支持');
+    if(result?.deferred){if(isSend)sendWait=Math.max(Date.now()+1000,result.retryAt||Date.now()+30000);await AddonState.update('remoteReceipts',v=>({...v,[c.id]:{retryAt:Math.max(Date.now()+1000,result.retryAt||Date.now()+30000),reason:result.reason,startedAt:Date.now()}}),{});continue;}
     result={ok:result?.ok!==false,...(result?.info?{info:String(result.info).slice(0,500)}:{})};
    }catch(e){result={ok:false,error:e.message};}
    await finish(c.id,result);
@@ -51,7 +57,7 @@ const Bridge=(()=>{
   const draft={tid:String(msg.tid),fid:String(msg.fid),message:msg.message},draftRef=AddonState.id();
   const automatic=await AutoReply.begin(draft,draftRef);
   await AddonState.update('pendingApprovals',v=>({...v,[draft.tid]:{draftRef,draft,expires:Date.now()+15*60000}}),{});
-  try{const r=await call('/approval',{...draft,draftRef,autoAfterMs:automatic?300000:0});
+  try{await sync();const r=await call('/approval',{...draft,draftRef,autoAfterMs:automatic?300000:0});
    if(automatic){if(r.autoAfterMs!==300000)throw new Error('请重启 Agent 后再使用自动发表');await AutoReply.attach(draftRef,r.id);}return {...r,automatic};
   }catch(e){await AutoReply.cancel(e.message,draft.tid,draftRef);throw e;}
  }
