@@ -45,13 +45,13 @@ export function archiveDataLibrary(directory,store){
   const reset=!previous||previous.sourceId!==m.sourceId||previous.generation!==m.generation||m.seq<previous.cursor||previous.cursor+1<(m.journal?.firstSeq||0);
   // Rebuilds and source changes establish a safe new baseline, never replay history.
   if((reset||!manifest)&&m.coverage!=='full')throw Error('机读存档尚未补齐，等待上游覆盖范围变为“全部”');
-  const next=new Map(),hashes={},contentHashes=previous?.sourceId===m.sourceId?{...previous.contentHashes}:{};let changed=0,unavailable=0,incomplete=0,verified=0;
+  const next=new Map(),hashes={},invalid={},contentHashes=previous?.sourceId===m.sourceId?{...previous.contentHashes}:{};let changed=0,unavailable=0,incomplete=0,verified=0,verifiedGaps=0;
   for(const [tid,e] of Object.entries(m.threads)){
    if(e.mdMissing||(!e.revision&&!e.jsonFile)){unavailable++;continue;}
    let record=cache.get(tid);
    if(!record||manifest?.sourceId!==m.sourceId||record.hash!==e.jsonSha256){
     const bytes=await read(e.jsonFile,32*1024*1024);
-    if(sha(bytes)!==e.jsonSha256)throw Error(`帖子 ${tid} 尚未写入完成或校验失败，稍后重试`);
+    if(sha(bytes)!==e.jsonSha256){invalid[tid]='JSON与清单校验值不一致，等待上游重新发布';unavailable++;continue;}
     const data=JSON.parse(bytes);
     if(!protocol(data)||data.sourceId!==m.sourceId||String(data.tid)!==tid||data.revision!==e.revision||!Array.isArray(data.floors)||!Array.isArray(data.foldedFloors||[]))throw Error(`帖子 ${tid} 数据与清单不一致`);
     let u;try{u=new URL(data.url);}catch{throw Error(`帖子 ${tid} 网址无效`);}
@@ -66,16 +66,19 @@ export function archiveDataLibrary(directory,store){
    if(!reset&&previous.contentHashes&&previous.contentHashes[tid]!==contentHash)changed++;
    contentHashes[tid]=contentHash;
    const ready=e.complete===true&&!e.lastFailure;
-   const c=e.capture,b=record.data.capture;
+   const b=record.data.capture;
+   const last=e.lastFull;
+   const verifiedGap=!!last&&integer(last.gap)&&integer(last.holes)&&integer(e.maxFloor)&&integer(e.replies)&&Math.max(0,e.replies+1-e.maxFloor)<=last.gap&&Math.max(0,e.maxFloor-new Set([...record.data.floors,...(record.data.foldedFloors||[])].map(f=>f.floor)).size)<=last.holes;
+   if(verifiedGap)verifiedGaps++;
    const validCapture=x=>x?.known===true&&x.ok===true&&x.scope==='incremental'&&x.complete===false&&!x.reason&&Array.isArray(x.pagesRead)&&x.pagesRead.length===2&&x.pagesRead.every(n=>Number.isSafeInteger(n)&&n>0)&&x.pagesRead[0]<=x.pagesRead[1]&&Number.isSafeInteger(x.totalPages)&&x.pagesRead[1]===x.totalPages;
-   const incremental=e.complete===false&&!e.lastFailure&&validCapture(c)&&validCapture(b)&&JSON.stringify(c)===JSON.stringify(b);
+   const incremental=e.complete===false&&!e.lastFailure&&validCapture(b);
    const analysisReady=ready||incremental;
    if(!ready)incomplete++;
-   hashes[tid]=e.jsonSha256;next.set(tid,{...record,contentHash,entry:e,ready,analysisReady,incremental});
+   hashes[tid]=e.jsonSha256;next.set(tid,{...record,contentHash,entry:e,ready,analysisReady,incremental,verifiedGap});
   }
-  // All-or-nothing: a failed read cannot advance the cursor past an unread change.
-  const state={sourceId:m.sourceId,generation:m.generation,cursor:m.seq,hashes,contentHashes,baselineAt:reset?Date.now():previous.baselineAt,checkedAt:Date.now(),coverage:m.coverage,total:next.size,unavailable,incomplete,changed:reset?0:changed,verified,mode:reset?'baseline':'reconcile'};
-  if(reset||!previous.contentHashes||previous.cursor!==m.seq||previous.coverage!==m.coverage||previous.total!==state.total||previous.unavailable!==unavailable||previous.incomplete!==incomplete||previous.changed!==state.changed||JSON.stringify(previous.hashes)!==JSON.stringify(hashes))store.set(KEY,state);
+  // Valid records advance independently. Invalid records are excluded, never cached or acknowledged in hashes; every scan retries them. Keep prior content identities for recovery deduplication.
+  const state={sourceId:m.sourceId,generation:m.generation,cursor:m.seq,hashes,contentHashes,baselineAt:reset?Date.now():previous.baselineAt,checkedAt:Date.now(),coverage:m.coverage,total:next.size,unavailable,incomplete,verifiedGaps,invalid,changed:reset?0:changed,verified,mode:reset?'baseline':'reconcile'};
+  if(reset||!previous.contentHashes||previous.cursor!==m.seq||previous.coverage!==m.coverage||previous.total!==state.total||previous.unavailable!==unavailable||previous.incomplete!==incomplete||previous.verifiedGaps!==verifiedGaps||JSON.stringify(previous.invalid||{})!==JSON.stringify(invalid)||previous.changed!==state.changed||JSON.stringify(previous.hashes)!==JSON.stringify(hashes))store.set(KEY,state);
   cache=next;manifest=m;lastCheck=Date.now();lastError=null;
   return status();
  }
@@ -84,13 +87,13 @@ export function archiveDataLibrary(directory,store){
   inflight=scan().catch(e=>{lastError=e.message;throw e;}).finally(()=>{inflight=null;});return inflight;
  }
  async function ensure(refresh=false){if(refresh||!manifest||lastError||Date.now()-lastCheck>30000)await sync();}
- function status(){const s=store.get(KEY,null);return {ok:!!s&&!lastError,protocolVersion:1,contentIdentity:'mdSha256',sourceId:s?.sourceId||null,source:'_data',coverage:s?.coverage||null,total:s?.total||0,cursor:s?.cursor??null,generation:s?.generation??null,incomplete:s?.incomplete||0,unavailable:s?.unavailable||0,baselineAt:s?.baselineAt||null,checkedAt:lastCheck||s?.checkedAt||null,mode:s?.mode||'waiting',error:lastError};}
+ function status(){const s=store.get(KEY,null);return {ok:!!s&&!lastError,protocolVersion:1,contentIdentity:'mdSha256',sourceId:s?.sourceId||null,source:'_data',integrity: Object.keys(s?.invalid||{}).length?'degraded':'verified',invalid:s?.invalid||{},invalidCount:Object.keys(s?.invalid||{}).length,coverage:s?.coverage||null,total:s?.total||0,cursor:s?.cursor??null,generation:s?.generation??null,incomplete:s?.incomplete||0,verifiedGaps:s?.verifiedGaps||0,unavailable:s?.unavailable||0,baselineAt:s?.baselineAt||null,checkedAt:lastCheck||s?.checkedAt||null,mode:s?.mode||'waiting',error:lastError};}
  function view(tid,r){
   const d=r.data,e=r.entry;
   const floors=[...d.floors,...(d.foldedFloors||[])].sort((a,b)=>a.floor-b.floor).map(f=>({...f,heading:[f.author||'未知作者',f.time||'时间未知'].join(' · '),archiveData:true}));
-  return {...d,tid,id:tid,count:floors.length,floors,fileName:e.jsonFile,capturedAt:forumTime(d.capturedAt),mtime:Date.parse(d.writtenAt)||0,complete:r.ready,analysisReady:r.analysisReady,captureScope:r.incremental?'incremental':r.ready?'full':'unknown',warning:r.incremental?'成功增量更新，仅依据已存楼层分析，不代表全帖重新采集':r.ready?null:'本次采集不完整或完整性未知；仅代表已存内容',lastFailure:e.lastFailure||null};
+  return {...d,tid,id:tid,count:floors.length,floors,fileName:e.jsonFile,capturedAt:forumTime(d.capturedAt),mtime:Date.parse(d.writtenAt)||0,verifiedGap:r.verifiedGap,lastFull:e.lastFull||null,complete:r.ready,analysisReady:r.analysisReady,captureScope:r.incremental?'incremental':r.ready?'full':'unknown',warning:r.verifiedGap&&!r.ready?'缺楼已完整核对；仅代表已存内容，不表示不可见楼层已恢复':r.incremental?'成功增量更新，仅依据已存楼层分析，不代表全帖重新采集':r.ready?null:'本次采集不完整或完整性未知；仅代表已存内容',lastFailure:e.lastFailure||null};
  }
- async function get(tid){await ensure();if(!/^\d+$/.test(String(tid))||!cache.has(String(tid)))throw Error('机读存档中没有该帖，请刷新列表');return view(String(tid),cache.get(String(tid)));}
+ async function get(tid){await ensure();const problem=store.get(KEY,null)?.invalid?.[String(tid)];if(problem)throw Error('帖子 '+tid+' 已隔离：'+problem);if(!/^\d+$/.test(String(tid))||!cache.has(String(tid)))throw Error('机读存档中没有该帖，请刷新列表');return view(String(tid),cache.get(String(tid)));}
  async function list({query='',offset=0,refresh=false}={}){
   await ensure(refresh);const q=String(query).trim().toLowerCase().slice(0,200);
   const found=[...cache].map(([tid,r])=>({id:tid,tid,fid:r.data.fid,title:r.data.title,url:r.data.url,count:r.data.floorCount,fileName:r.entry.jsonFile,complete:r.ready,writtenAt:r.data.writtenAt})).filter(x=>!q||String(x.title).toLowerCase().includes(q)||x.tid.includes(q)).sort((a,b)=>String(b.writtenAt).localeCompare(String(a.writtenAt))||a.tid.localeCompare(b.tid));

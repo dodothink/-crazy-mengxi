@@ -1,8 +1,10 @@
+> agent.17 新增关注账号摘要：工作台“运行与开关”或 Telegram /digest，支持设置名单、时间、开始和停止。详见 [使用教程](docs/关注账号摘要_agent17.md)。本地新功能已测试；存档校验已在上游重建后恢复，agent.17.1增加故障隔离；本轮未发布 GitHub。
+
 # 梦溪·回声 MENGXI ECHO
 
 有所记录，有所回应。
 
-当前版本 **4.2.5-agent.16**，原名“疯狂的梦溪”。独立 Chrome 扩展与本地 Node Agent：读取上游写出的本机存档、生成 Kimi 回复草稿、通过 Telegram 管理任务及逐条确认发表。
+当前版本 **4.2.5-agent.17.2**，原名“疯狂的梦溪”。独立 Chrome 扩展与本地 Node Agent：读取上游写出的本机存档、生成 Kimi 回复草稿、通过 Telegram 管理任务及逐条确认发表。
 
 ## 这版更新
 
@@ -19,7 +21,7 @@
 
 ## 安装
 
-安装 Node.js 24 或以上。本项目无 npm 依赖。下载 Releases 中的 `MengxiEcho-4.2.5-agent.16.zip`，或在源码根目录执行：
+安装 Node.js 24 或以上。本项目无 npm 依赖。下载 Releases 中的 `MengxiEcho-4.2.5-agent.17.2.zip`，或在源码根目录执行：
 
 ```sh
 node scripts/build.mjs

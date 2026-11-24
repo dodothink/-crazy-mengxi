@@ -3,7 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,writeFileSync,mkdirSync,readdirSync,lstatSync,cpSync,rmSync,renameSync,existsSync} from 'node:fs';
 import {resolve,join,relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
-const root=resolve(fileURLToPath(new URL('..',import.meta.url))),version='4.2.5-agent.16',productName='梦溪·回声',packageName='MengxiEcho-'+version;
+const root=resolve(fileURLToPath(new URL('..',import.meta.url))),version='4.2.5-agent.17.3-auto',productName='梦溪·回声',packageName='MengxiEcho-'+version;
 const git=(...args)=>execFileSync('git',args,{cwd:root,maxBuffer:30*1024*1024});
 const lock=JSON.parse(readFileSync(join(root,'upstream-lock.json'),'utf8'));
 const sha=data=>createHash('sha256').update(data).digest('hex');
@@ -29,7 +29,7 @@ const coreTests=files(join(coreTest,'test')).filter(x=>x.endsWith('.test.mjs'));
 const testTmp=join(stage,'.test-tmp');mkdirSync(testTmp);
 try{for(const suite of [coreTests,tests])execFileSync(process.execPath,['--test',...suite],{cwd:stage,stdio:'inherit',env:{...process.env,TMPDIR:testTmp,TMP:testTmp,TEMP:testTmp}});}finally{rmSync(testTmp,{recursive:true,force:true});rmSync(coreTest,{recursive:true,force:true});}
 
-const info={productName,version,upstreamVersion:lock.version,compatibleArchiveProducerVersion:"4.4.1",archiveProtocolVersion:1,upstreamTag:lock.tag,upstreamBaseCommit:lock.baseCommit,upstreamSnapshotHash:sha(readFileSync(join(root,'upstream-lock.json'))),downstreamCommit:git('rev-parse','HEAD').toString().trim(),downstreamPatches,coreIntegrity:'SHA-256 verified upstream snapshot; manifest, icons and listed downstreamPatches are explicit downstream overrides',builtAt:new Date().toISOString()};
+const info={productName,version,upstreamVersion:lock.version,compatibleArchiveProducerVersion:"4.4.5",archiveProtocolVersion:1,upstreamTag:lock.tag,upstreamBaseCommit:lock.baseCommit,upstreamSnapshotHash:sha(readFileSync(join(root,'upstream-lock.json'))),downstreamCommit:git('rev-parse','HEAD').toString().trim(),downstreamPatches,coreIntegrity:'SHA-256 verified upstream snapshot; manifest, icons and listed downstreamPatches are explicit downstream overrides',builtAt:new Date().toISOString()};
 writeFileSync(join(stage,'BUILD-INFO.json'),JSON.stringify(info,null,2));
 cpSync(join(root,'upstream-lock.json'),join(stage,'upstream-lock.json'));
 cpSync(join(root,'docs/回声_版本说明.md'),join(stage,'版本说明.md'));

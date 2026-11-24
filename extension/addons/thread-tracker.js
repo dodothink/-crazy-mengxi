@@ -14,7 +14,7 @@ const ThreadTracker=(()=>{
  function view(t,s,online){
   if(!t.enabled)return {label:'已关闭',tone:'off'};
   if(!online)return {label:'已开启，Agent 连接待恢复',tone:'warn'};
-  if(analyzing.has(t.tid))return {label:'Kimi 正在分析新回复',tone:'busy'};
+  if(analyzing.has(t.tid))return {label:'AI 正在分析新回复',tone:'busy'};
   if(t.draft)return {label:'等待你审核草稿',tone:'ready'};
   if(t.archiveWaiting)return {label:'已读到存档，等待上游成功采集',tone:'warn'};
   if(t.lastError)return {label:'上轮失败，等待重试',tone:'error'};
@@ -41,7 +41,7 @@ const ThreadTracker=(()=>{
   for(const t of Object.values(await read())){
    if(!t.enabled)continue;
    if(t.localSource&&t.notice&&!t.reviewHold){
-    try{await Bridge.sync();await Bridge.request('/track-notify',{id:t.notice.id,tid:t.tid,text:t.notice.text+'\n必须逐条确认；不会超时自动发表。'});await update(t.tid,x=>x.notice?.id===t.notice.id?{...x,notice:null}:x);}catch(e){await update(t.tid,x=>({...x,lastError:'手机提醒未送达：'+e.message}));}
+    try{await Bridge.sync();await Bridge.request('/track-notify',{id:t.notice.id,tid:t.tid,text:t.notice.text+'\n请在电脑处理；若已开启超时自动发表，草稿送审后按倒计时执行。'});await update(t.tid,x=>x.notice?.id===t.notice.id?{...x,notice:null}:x);}catch(e){await update(t.tid,x=>({...x,lastError:'手机提醒未送达：'+e.message}));}
    }
    if(t.localSource&&t.nextAt>Date.now())continue;
    await update(t.tid,x=>({...x,nextAt:Date.now()+60000,queuedAt:null}));
@@ -59,7 +59,7 @@ const ThreadTracker=(()=>{
    const fresh=floors.filter(f=>!t.seen.includes(f.floor)&&eligible(t,f));
    await update(tid,x=>({...x,title,lastAt:Date.now(),newCount:fresh.length}));
    if(t.draft){await update(tid,x=>({...x,note:'已有待审核草稿，新回复稍后处理'}));return;}
-   if(!fresh.length){await update(tid,x=>({...x,seen:ids,note:'没有符合回复对象的新楼层，不调用 Kimi'}));return;}
+   if(!fresh.length){await update(tid,x=>({...x,seen:ids,note:'没有符合回复对象的新楼层，不调用 AI 模型'}));return;}
    const cfg=(await Bridge.request('/ai-config',{})).config||{};let batch=fresh.slice(0,Math.min(20,Math.max(1,cfg.batchSize||8)));let selected=new Set(batch.map(f=>f.floor));
    const makeContext=()=>JSON.stringify({title,archiveScope:r.source.captureScope||'full',archiveWarning:r.source.warning||null,myName:t.myName,instructions:t.prompt,myStatements:floors.filter(f=>String(f.author||'').trim()===t.myName).slice(-4).map(f=>({floor:f.floor,text:String(f.text||'').slice(0,600)})),context:floors.filter(f=>!selected.has(f.floor)).slice(-3).map(f=>({floor:f.floor,author:f.author,text:String(f.text||'').slice(0,900)})),newReplies:batch.map(f=>({floor:f.floor,author:f.author,text:String(f.text||'').slice(0,1600)}))});
    let context=makeContext();while(context.length>24000&&batch.length>1){batch.pop();selected=new Set(batch.map(f=>f.floor));context=makeContext();}

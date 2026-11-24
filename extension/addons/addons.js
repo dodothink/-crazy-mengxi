@@ -8,7 +8,7 @@ const AddonState=(()=>{
   async assertRunnable(){const s=await My0511API.status();if(s.haltPost||s.challenge)throw Error('发帖已暂停或等待人工验证');},
   event:(type,detail)=>My0511API.store.update('events',v=>[...v,{at:Date.now(),type,...detail}].slice(-200),[])};
 })();
-importScripts('addons/local-mode.js','addons/bridge.js','addons/auto-reply.js','addons/thread-tracker.js','addons/remote-control.js');
+importScripts('addons/role.js','addons/local-mode.js','addons/bridge.js','addons/auto-reply.js','addons/thread-tracker.js','addons/remote-control.js');
 const AddonControl={
  async status(){const s=await My0511API.status();return {...s,ok:true,posts:(s.posts||[]).slice(-20),alertGap:await AddonState.read('alertGap',null),archiveStatus:await My0511API.archiveStatus(),agentConnectedAt:(await AddonState.read('agentConnection',null))?.lastSeenAt||null};},
  async pause(scope,paused){if(!paused&&scope==='collect')throw Error('下游只读本机存档，请在上游插件采集');await LocalMode.enforce();return paused?My0511API.pause(scope):My0511API.resume(scope==='all'?'post':scope);},
@@ -28,9 +28,15 @@ const AddonControl={
    case 'ADDON_PAIR':return Bridge.pair(m.code);
    case 'ADDON_SYNC':return Bridge.sync();
    case 'ADDON_ARCHIVE_WATCH':return Bridge.request('/archive-watch',m);
+   case 'ADDON_ACCOUNT_DIGEST':return Bridge.request('/account-digest',m);
    case 'ADDON_ARCHIVE_SEARCH':return Bridge.request('/archive-search',m);
    case 'ADDON_ARCHIVE_STATUS':return Bridge.request('/archive-status',{});
+   case 'ADDON_ROLE_GET':return AddonRole.get();
+   case 'ADDON_ROLE_SET':return AddonRole.set(m.role||null);
    case 'ADDON_AI_CONFIG':return Bridge.request('/ai-config',m);
+   case 'ADDON_AI_MODELS':return Bridge.request('/ai-models',{});
+   case 'ADDON_AI_TEST':return Bridge.request('/ai-test',{});
+   case 'ADDON_AI_TEST_ALL':return Bridge.request('/ai-test-all',{});
    case 'ADDON_SETTINGS':return Bridge.settings(m);
    case 'ADDON_AI':return Bridge.ai(m.tid,m.prompt);
    case 'ADDON_ARCHIVES':return Bridge.archives(m);

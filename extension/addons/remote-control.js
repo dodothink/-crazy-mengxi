@@ -7,7 +7,7 @@ const RemoteControl=(()=>{
   if(m.op==='auto'){if(typeof m.enabled!=='boolean')throw Error('自动发表开关无效');await AutoReply.setEnabled(m.enabled);return {ok:true,info:'自动发表已'+(m.enabled?'开启；只对新草稿生效':'关闭')};}
   if(m.op==='cancelAuto'){const a=(await AutoReply.status()).task;if(a)await Bridge.invalidateApproval(a.tid);return {ok:true,info:'已取消尚未提交的自动发表'};}
   if(m.op==='pauseTasks'){await ThreadTracker.pauseAll();return {ok:true,info:'全部跟踪任务已暂停'};}
-  if(m.op==='add'){await ThreadTracker.save(m);return {ok:true,info:'任务已添加并开启：'+m.url+'；首次读取本机存档建立基线，缺少存档时等待上游更新。回复须逐条确认。'};}
+  if(m.op==='add'){await ThreadTracker.save(m);return {ok:true,info:'任务已添加并开启：'+m.url+'；首次读取本机存档建立基线，缺少存档时等待上游更新。回复按当前审核方式处理。'};}
   const t=(await ThreadTracker.list()).items.find(x=>x.tid===m.tid);if(!t||t.revision!==m.revision)throw Error('任务已变化或移除，请刷新手机任务列表');
   if(m.op==='toggle'){if(typeof m.enabled!=='boolean')throw Error('任务开关无效');await ThreadTracker.toggle(t.tid,m.enabled);}
   else if(m.op==='remove')await ThreadTracker.remove(t.tid);

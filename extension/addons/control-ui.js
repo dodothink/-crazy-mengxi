@@ -4,8 +4,8 @@ async function send(m){const r=await chrome.runtime.sendMessage(m);if(!r?.ok)thr
 async function refresh(){latest=await send({type:'ADDON_STATUS'});$('status').textContent=`数据：仅本机存档 · 下游采集：${latest.haltCollect?'已停用':'正在停止'} · 人工确认发帖：${latest.haltPost?'暂停':'允许'}`;
 if(latest.alertGap)$('status').textContent+=' · 有提醒缺失，请核对论坛';
 
-$('human').hidden=!latest.challenge;$('reason').textContent=latest.challenge?.reason||'';$('connection').textContent=latest.agentConnectedAt?'最近连接：'+new Date(latest.agentConnectedAt).toLocaleString():'尚未连接本地服务';
-$('events').textContent=latest.log.map(x=>new Date(x.at).toLocaleTimeString()+' '+x.type+(x.error?' · '+x.error:'')).join('\n')||'暂无事件';
+$('human').hidden=!latest.challenge;$('reason').textContent=latest.challenge?.reason||'';$('connection').textContent=latest.agentConnectedAt?'最近连接：'+TimeFmt.fmt(latest.agentConnectedAt):'尚未连接本地服务';
+$('events').textContent=latest.log.map(x=>TimeFmt.fmt(x.at)+' '+x.type+(x.error?' · '+x.error:'')).join('\n')||'暂无事件';
 }
 async function act(fn){$('notice').textContent='';try{await fn();}catch(e){$('notice').textContent=e.message;}}
 $('refresh').onclick=()=>act(refresh);$('pause').onclick=()=>act(async()=>{await send({type:'ADDON_PAUSE',scope:'all'});await refresh();});
@@ -49,7 +49,7 @@ act(async()=>{await refresh();const r=await send({type:'ADDON_LIST'});browserThr
 $('draft').addEventListener('input',()=>{if($('threads').value)act(()=>send({type:'ADDON_INVALIDATE_APPROVAL',tid:selectedThread()?.tid}));});
 
 function showSettings(r){
- $('settingsStatus').textContent=`Kimi：${r.kimiConfigured?'已配置':'未配置'} · Telegram：${r.telegramConfigured?(r.telegramBound?'已绑定':'待绑定'):'未配置'}`;
+ $('settingsStatus').textContent=`Kimi：${r.kimiConfigured?'已配置':'未配置'} · OpenRouter：${r.openrouterConfigured?'已配置':'未配置'} · Telegram：${r.telegramConfigured?(r.telegramBound?'已绑定':'待绑定'):'未配置'}`;
  $('bindingCommand').hidden=$('copyBinding').hidden=!r.bindCode;
  $('bindingCommand').value=r.bindCode?'/start '+r.bindCode:'';
  $('bindingHelp').textContent=r.bindCode?'打开你自己的 Telegram 机器人，发送下方命令。绑定码 15 分钟有效，请勿分享。':r.telegramBound?'已绑定本人私人账号。':'保存 Token 后生成绑定码，或点击「生成新的绑定码」。';
@@ -60,7 +60,7 @@ $('loadSettings').onclick=()=>act(loadSettings);
 $('renewBind').onclick=()=>act(async()=>showSettings(await send({type:'ADDON_SETTINGS',action:'renew'})));
 $('saveSettings').onclick=()=>act(async()=>{
  $('saveSettings').disabled=true;
- try{const r=await send({type:'ADDON_SETTINGS',action:'save',kimiKey:$('kimiKey').value,telegramToken:$('telegramToken').value});$('kimiKey').value='';$('telegramToken').value='';showSettings(r);$('notice').textContent='已保存到本机。配置状态表示已保存，不代表外部认证已验证。';}
+ try{const r=await send({type:'ADDON_SETTINGS',action:'save',kimiKey:$('kimiKey').value,openrouterKey:$('openrouterKey').value,telegramToken:$('telegramToken').value});$('kimiKey').value='';$('openrouterKey').value='';$('telegramToken').value='';showSettings(r);$('notice').textContent='已保存到本机。配置状态表示已保存，不代表外部认证已验证。';}
  finally{$('saveSettings').disabled=false;}
 });
 $('copyBinding').onclick=()=>act(async()=>{await navigator.clipboard.writeText($('bindingCommand').value);$('notice').textContent='已复制，在自己的机器人私聊中发送即可。';});
@@ -80,7 +80,7 @@ let autoState={enabled:false,task:null};
 function showAuto(r){
  autoState=r;const t=r.task;
  $('autoReplyToggle').setAttribute('aria-pressed',String(r.enabled));
- $('autoReplyToggle').textContent='逐条确认后发送 · 超时不发表';$('autoReplyToggle').disabled=true;
+ $('autoReplyToggle').textContent=r.enabled?'超时自动发表 · 已开启（5 分钟无回复即发表）':'逐条确认后发送 · 超时不发表';$('autoReplyToggle').disabled=false;
  const active=t&&['waiting_notice','countdown','claiming','sending'].includes(t.state);
  $('cancelAutoReply').hidden=!active;
  let text=r.enabled?'已开启。新跟踪草稿自动送审，通知送达后计时；手动草稿需点击送审。':'已关闭，所有回复由你在论坛确认发表。';
@@ -108,3 +108,23 @@ $('approval').onclick=()=>act(async()=>{
 });
 refreshAuto().catch(()=>{});
 setInterval(()=>{if(!document.hidden)refreshAuto().catch(()=>{$('autoReplyStatus').textContent='无法读取任务状态，请重新打开工作台；需要时暂停发帖。';});},1000);
+
+// 插件角色：采集端 / 回复端 / 未设置（页面通过消息读写，AddonState 只在后台存在）
+(function roleUI(){
+ const sel=document.getElementById('roleSelect');if(!sel)return;
+ const status=document.getElementById('roleStatus');
+ const label=v=>v==='collector'?'采集端':v==='responder'?'回复端':'未设置（与纯插件版一致）';
+ (async()=>{
+  try{const r=await send({type:'ADDON_ROLE_GET'});sel.value=r||'';status.textContent='当前：'+label(r);}
+  catch(e){status.textContent='读取角色失败：'+e.message;}
+ })();
+ document.getElementById('roleSave').onclick=()=>act(async()=>{
+  const btn=document.getElementById('roleSave');btn.disabled=true;
+  try{
+   const v=sel.value||null;
+   await send({type:'ADDON_ROLE_SET',role:v});
+   status.textContent='已保存：'+label(v)+'。重新加载扩展后完全生效。';
+  }catch(e){status.textContent='保存失败：'+e.message;}
+  finally{btn.disabled=false;}
+ });
+})();

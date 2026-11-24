@@ -1,0 +1,4 @@
+{
+  "note": "合并版先不裁剪上游界面；采集端需要 popup/options/control。后续如要裁剪在此登记。",
+  "exclude": []
+}

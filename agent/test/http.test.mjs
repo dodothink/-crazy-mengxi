@@ -13,6 +13,7 @@ test('HTTP authentication, origin isolation, one-use pairing and AI validation',
  assert.equal((await call('/archive-search',{query:'正文'})).status,401);
  assert.equal((await call('/archive-status',{})).status,401);
  assert.equal((await call('/services',{})).status,401);
+ assert.equal((await call('/account-digest',{})).status,401);
  assert.equal((await call('/report',{kind:'daily'})).status,401);
  assert.equal((await call('/settings',{action:'save',kimiKey:'test-key-12345'})).status,401);
  assert.equal((await call('/pair',{}, {Origin:'https://evil.invalid'})).status,403);
@@ -20,6 +21,7 @@ test('HTTP authentication, origin isolation, one-use pairing and AI validation',
  const code=readFileSync(dir+'pairing-code','utf8');const p=await (await call('/pair',{code,profile:'test-profile-123456'})).json();assert.equal(p.ok,true);
  assert.equal((await call('/pair',{code,profile:'test-profile-123456'})).status,403);
  const headers={Authorization:'Bearer '+p.token};
+ const ds=await (await call('/account-digest',{action:'save',config:{users:[{name:'测试作者',enabled:true}],intervalMinutes:60}},headers)).json();assert.equal(ds.config.users[0].name,'测试作者');assert.equal(ds.config.enabled,false);assert.equal((await call('/account-digest',{action:'save',config:{times:['99:00']}},headers)).status,400);
  const search=await (await call('/archive-search',{query:'正文'},headers)).json();assert.equal(search.total,1);assert.equal(search.items[0].floor,1);assert.equal((await call('/archive-search',{},headers)).status,400);
  const aiCfg=await (await call('/ai-config',{action:'save',config:{dailyLimit:0,batchSize:12,reasoningEffort:'low'}},headers)).json();assert.equal(aiCfg.config.model,'kimi-k3.1-pro');assert.equal(aiCfg.config.batchSize,12);assert.equal((await call('/ai-config',{action:'save',config:{dailyLimit:-1}},headers)).status,400);
  const service=await (await call('/services',{action:'save',config:{dailyEnabled:false,quietStart:'01:00'}},headers)).json();assert.equal(service.config.quietStart,'01:00');assert.equal(service.config.dailyEnabled,false);
@@ -46,6 +48,11 @@ test('HTTP authentication, origin isolation, one-use pairing and AI validation',
   db.set('telegramBinding',{chatId:'test-chat',userId:'test-user'});
   const request={tid:'1',fid:'152',message:'测试，不发表',draftRef:'test-draft-reference-1'};
   const approved=await (await call('/approval',request,headers)).json();assert.equal(approved.ok,true);assert.equal(db.get('approval:'+approved.id).draftRef,request.draftRef);
+  const autoRef='test-draft-reference-auto';
+  const auto=await (await call('/approval',{...request,draftRef:autoRef,autoAfterMs:300000},headers)).json();assert.equal(auto.ok,true);assert.equal(auto.autoAfterMs,300000);assert.equal(db.get('approval:'+auto.id).autoAfterMs,300000);
+  const claimEarly=await (await call('/auto-approval',{id:auto.id,draftRef:autoRef,action:'claim'},headers)).json();assert.equal(claimEarly.ok,false);assert.match(claimEarly.error,/尚未确认送达/);
+  assert.equal((await call('/approval',{...request,draftRef:'test-draft-reference-bad',autoAfterMs:60000},headers)).status,400);
+  assert.equal((await (await call('/approval',{...request,draftRef:'test-draft-reference-manual'},headers)).json()).autoAfterMs,0);
  }finally{db.close();}
 
  }finally{if(child.exitCode===null){child.kill('SIGTERM');await once(child,'exit').catch(()=>{});}rmSync(join(dir,'..'),{recursive:true,force:true});}
